@@ -1,0 +1,50 @@
+name: 股东增减持家数日报
+
+on:
+  schedule:
+    # GitHub Actions 的 cron 一律按 UTC 解释；UTC 13:20 = 北京 21:20
+    # 选 21:20 是为了等东财当日公告基本入库（EITIME 集中在 17:00~19:00）
+    - cron: '20 13 * * 1-5'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: holder-change
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: Asia/Shanghai
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          package-manager-cache: false
+
+      - name: 抓取并生成看板
+        run: python build.py
+
+      - name: 结果校验
+        run: python check.py
+
+      - name: 提交回仓库
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/index.html history.json
+          if git diff --cached --quiet; then
+            echo "数据未变化（非交易日 / 幂等），不提交"
+          else
+            git commit -m "chore: update holder change $(date +%F)"
+            git pull --rebase origin main
+            git push
+          fi
