@@ -6,15 +6,16 @@
 <meta name="theme-color" content="#181A20">
 <title>A股股东增减持家数</title>
 <style>
-:root{--bg:#181A20;--panel:#1E2128;--line:#2A2F39;--txt:#D6DAE1;--sub:#8A93A3;--accent:#FF8A1F;--up:#E8453C;--down:#1FB37A}
+:root{--bg:#181A20;--panel:#1E2128;--line:#2A2F39;--txt:#D6DAE1;--sub:#8A93A3;--accent:#FF8A1F;--up:#E8453C;--down:#1FB37A;--idx:#F5A623;--rank:#A78BFA}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--txt);font:14px/1.6 "Microsoft YaHei","PingFang SC",-apple-system,"Segoe UI",sans-serif;padding:16px}
 .wrap{max-width:1180px;margin:0 auto}
 header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:8px;margin-bottom:14px}
 h1{font-size:20px;font-weight:700}
 .sub{font-size:12px;color:var(--sub);margin-top:2px}
-.badge{display:inline-block;padding:2px 8px;border:1px solid var(--line);border-radius:10px;font-size:11px;color:var(--sub);margin-left:6px}
+.badge{display:inline-block;padding:2px 8px;border:1px solid var(--line);border-radius:10px;font-size:11px;color:var(--sub);margin-left:6px;font-weight:400}
 .badge.warn{color:var(--accent);border-color:rgba(255,138,31,.5)}
+.badge.idx{color:var(--idx);border-color:rgba(245,166,35,.45)}
 .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
 .kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
 .kl{font-size:11.5px;color:var(--sub)}
@@ -24,12 +25,14 @@ h1{font-size:20px;font-weight:700}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px}
 .ct{font-size:13px;font-weight:600;margin-bottom:6px}
 .cs{font-size:11px;color:var(--sub);font-weight:400;margin-left:8px}
-.bar{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+.bar{display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap}
 .btn{border:1px solid var(--line);background:transparent;color:var(--sub);padding:4px 10px;border-radius:7px;font-size:12px;cursor:pointer}
 .btn:hover{color:var(--txt)}
 .btn.on{background:rgba(255,138,31,.14);border-color:rgba(255,138,31,.55);color:var(--accent)}
+.btn.ix.on{background:rgba(245,166,35,.14);border-color:rgba(245,166,35,.55);color:var(--idx)}
+.btn.rk.on{background:rgba(167,139,250,.16);border-color:rgba(167,139,250,.55);color:var(--rank)}
 svg{width:100%;height:auto;display:block;overflow:visible}
-.ax{fill:var(--sub);font-size:11px;font-family:Consolas,monospace}
+.ax{font-size:11px;font-family:Consolas,monospace}
 .gl{stroke:var(--line);stroke-width:1}
 #tip{position:fixed;display:none;pointer-events:none;z-index:9;background:#0F1116;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px;line-height:1.7;box-shadow:0 6px 18px rgba(0,0,0,.45);white-space:nowrap}
 table{width:100%;border-collapse:collapse;font-size:12px}
@@ -45,7 +48,7 @@ th{color:var(--sub);font-weight:400}
 <body>
 <div class="wrap">
 <header>
-  <div><h1>A股重要股东增减持家数 <span class="badge" id="asofBadge">__ASOF__</span><span class="badge warn" id="staleBadge" style="display:none"></span></h1>
+  <div><h1>A股重要股东增减持家数 <span class="badge" id="asofBadge">__ASOF__</span><span class="badge warn" id="staleBadge" style="display:none"></span><span class="badge idx">__HSBADGE__</span></h1>
   <div class="sub">公告日口径 · 按公司代码去重 · 主图看 __WIN__ 交易日累计净家数　<span id="provBadge" class="badge warn"></span></div></div>
   <div class="sub">数据截至 __ASOF__　生成于 __GEN__　共 __ROWS__ 个交易日</div>
 </header>
@@ -53,24 +56,21 @@ th{color:var(--sub);font-weight:400}
 __KPI__
 
 <div class="card">
-  <div class="ct">净家数趋势 <span class="cs">增持家数 − 减持家数，__WIN__ 交易日累计；红正绿负</span></div>
+  <div class="ct">净家数 vs 沪深300 <span class="cs">左轴净家数（红正绿负）· 右轴沪深300点位 / 分位，同轴鼠标联动</span></div>
   <div class="bar" id="rangeBar">
     <button class="btn" data-n="60">近 3 月</button>
     <button class="btn on" data-n="250">近 1 年</button>
     <button class="btn" data-n="750">近 3 年</button>
     <button class="btn" data-n="0">全部</button>
+    <button class="btn ix on" id="tglPx">沪深300 点位</button>
+    <button class="btn rk" id="tglHp">沪深300 分位</button>
   </div>
-  <svg id="main" viewBox="0 0 1000 320" preserveAspectRatio="none"></svg>
-</div>
-
-<div class="card">
-  <div class="ct">每日增持 / 减持家数 <span class="cs">最近 120 个交易日；红=增持（上），绿=减持（下）</span></div>
-  <svg id="sub" viewBox="0 0 1000 190" preserveAspectRatio="none"></svg>
+  <svg id="main" viewBox="0 0 1000 340" preserveAspectRatio="none"></svg>
 </div>
 
 <div class="card">
   <div class="ct">最近 10 个交易日</div>
-  <table><thead><tr><th>公告日</th><th>增持</th><th>减持</th><th>净家数</th><th>__WIN__日累计</th><th>__WIN__日增持占比</th></tr></thead>
+  <table><thead><tr><th>公告日</th><th>增持</th><th>减持</th><th>净家数</th><th>__WIN__日累计</th><th>净家数分位</th><th>沪深300</th><th>分位差</th></tr></thead>
   <tbody id="tb"></tbody></table>
 </div>
 
@@ -82,23 +82,25 @@ __KPI__
     <li><b>家数</b>：按证券代码去重的<b>公司家数</b>。同一公司多个股东同日增减持只算 1 家；一条公告 ≠ 一家公司。</li>
     <li><b>方向</b>：只认 DIRECTION 字段。数据源存在「减持但数量为正」的记录，符号字段不可靠。</li>
     <li><b>基准线</b>：这套披露口径天然「减持多于增持」（减持多为法定强制披露、增持多为自愿），日均约增 3 家 / 减 15 家。<b>50% 不是中性线</b>，卡片里的「历史中位」才是这套序列自己的荣枯基准，判断冷热请优先看「历史分位」。</li>
+    <li><b>沪深300 对照</b>：腾讯日K（`sh000300`），独立宿主；分位是各自 250 交易日滚动 percentile rank（0–100），「分位差 = 净家数分位 − 沪深300分位」只作<b>描述性背离读数</b>。实测两者与未来 20 日收益相关性仅约 0.1，<b>不是买卖信号</b>，也没有增设分档出手规则。</li>
     <li><b>滞后</b>：公告在 17:00–19:00 才陆续入库，最近 1–2 日标注「未定稿」，隔日回看才稳定。</li>
     <li><b>用途</b>：这是<b>披露口径的股东行为宽度</b>，用于观察趋势和极值，不构成买卖建议。</li>
   </ul>
-  <div style="margin-top:8px">本次抓到原始公告 __RAW__ 条，回看窗口内变化 __CHANGED__ 天；数据资产 <code>history.json</code> 随仓库提交。</div>
+  <div style="margin-top:8px">本次抓到原始公告 __RAW__ 条，回看窗口内变化 __CHANGED__ 天；数据资产 <code>history.json</code> / <code>hs300.json</code> 随仓库提交。</div>
 </div>
 </div>
 <div id="tip"></div>
 
 <script>
 var D=__DATA__, PROV=__PROV__, WIN=__WIN__;
-var Lf=58,R=18,T=18,B=28,W=1000,H=320;
-var mainEl=document.getElementById('main'), subEl=document.getElementById('sub');
-var tip=document.getElementById('tip'), curN=250, curRows=[], cross=null;
+var Lf=60,Rr=66,T=18,B=28,W=1000,H=340;
+var mainEl=document.getElementById('main'), tip=document.getElementById('tip');
+var curN=250, curRows=[], showPx=true, showHp=false, marks={};
 
 function col(v){return v>0?'#E8453C':(v<0?'#1FB37A':'#8A93A3');}
 function sg(v){return (v>0?'+':'')+v;}
-function esc(s){return String(s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+function p1(v){return v==null?'—':v.toFixed(1)+'%';}
+function fmtPx(v){return v==null?'—':v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 
 function renderMain(){
   var rows=curN>0?D.slice(-curN):D;
@@ -106,69 +108,75 @@ function renderMain(){
   var vals=rows.map(function(x){return x.s20;});
   var mx=Math.max.apply(null,vals.concat([10])), mn=Math.min.apply(null,vals.concat([-10]));
   var p=(mx-mn)*0.1; mx+=p; mn-=p;
-  var X=function(i){return Lf+i*(W-Lf-R)/Math.max(1,rows.length-1);};
+  var pv=rows.map(function(x){return x.px;}).filter(function(v){return v!=null;});
+  var pmx=pv.length?Math.max.apply(null,pv):1, pmn=pv.length?Math.min.apply(null,pv):0;
+  var pp=(pmx-pmn)*0.08||1; pmx+=pp; pmn-=pp;
+  var X=function(i){return Lf+i*(W-Lf-Rr)/Math.max(1,rows.length-1);};
   var Y=function(v){return T+(mx-v)*(H-T-B)/(mx-mn);};
+  var YP=function(v){return T+(pmx-v)*(H-T-B)/(pmx-pmn);};
+  var YR=function(v){return T+(100-v)*(H-T-B)/100;};
   var out=[];
-  // 网格 + 刻度
-  [0,mn/2,mx/2].forEach(function(v){out.push('<line class="gl" x1="'+Lf+'" y1="'+Y(v)+'" x2="'+(W-R)+'" y2="'+Y(v)+'"/>');});
-  out.push('<line x1="'+Lf+'" y1="'+Y(0)+'" x2="'+(W-R)+'" y2="'+Y(0)+'" stroke="#6B7280" stroke-width="1" stroke-dasharray="4 4"/>');
-  [mx,mn].forEach(function(v){out.push('<text class="ax" x="4" y="'+(Y(v)+4)+'">'+Math.round(v)+'</text>');});
-  out.push('<text class="ax" x="4" y="'+(Y(0)+4)+'">0</text>');
-  // 曲线按正负着色
-  for(var i=1;i<rows.length;i++){
+  [0,mn/2,mx/2].forEach(function(v){out.push('<line class="gl" x1="'+Lf+'" y1="'+Y(v)+'" x2="'+(W-Rr)+'" y2="'+Y(v)+'"/>');});
+  out.push('<line x1="'+Lf+'" y1="'+Y(0)+'" x2="'+(W-Rr)+'" y2="'+Y(0)+'" stroke="#6B7280" stroke-width="1" stroke-dasharray="4 4"/>');
+  [mx,mn].forEach(function(v){out.push('<text class="ax" x="4" y="'+(Y(v)+4)+'" fill="#8A93A3">'+Math.round(v)+'</text>');});
+  out.push('<text class="ax" x="4" y="'+(Y(0)+4)+'" fill="#8A93A3">0</text>');
+  if(showPx && pv.length){
+    [pmx,pmn].forEach(function(v){out.push('<text class="ax" x="'+(W-Rr+6)+'" y="'+(YP(v)+4)+'" fill="#F5A623">'+Math.round(v)+'</text>');});
+  }
+  if(showHp){[0,50,100].forEach(function(v){out.push('<text class="ax" x="'+(W-Rr+6)+'" y="'+(YR(v)+4)+'" fill="#A78BFA">'+v+'</text>');});}
+  var i,began,d;
+  for(i=1;i<rows.length;i++){
     out.push('<line x1="'+X(i-1)+'" y1="'+Y(rows[i-1].s20)+'" x2="'+X(i)+'" y2="'+Y(rows[i].s20)+'" stroke="'+col(rows[i].s20)+'" stroke-width="1.9"/>');
   }
-  // x 轴日期
+  if(showPx){
+    began=false;d='';
+    for(i=0;i<rows.length;i++){
+      if(rows[i].px==null){began=false;continue;}
+      d+=(began?'L':'M')+X(i)+' '+YP(rows[i].px); began=true;
+    }
+    out.push('<path d="'+d+'" fill="none" stroke="#F5A623" stroke-width="1.7" opacity="0.9"/>');
+  }
+  if(showHp){
+    began=false;d='';
+    for(i=0;i<rows.length;i++){
+      if(rows[i].hp==null){began=false;continue;}
+      d+=(began?'L':'M')+X(i)+' '+YR(rows[i].hp); began=true;
+    }
+    out.push('<path d="'+d+'" fill="none" stroke="#A78BFA" stroke-width="1.4" stroke-dasharray="5 4" opacity="0.9"/>');
+  }
   for(var k=0;k<4;k++){
     var idx=Math.round(k*(rows.length-1)/3);
-    out.push('<text class="ax" x="'+X(idx)+'" y="'+(H-6)+'" text-anchor="middle">'+rows[idx].d.slice(2)+'</text>');
+    out.push('<text class="ax" x="'+X(idx)+'" y="'+(H-6)+'" text-anchor="middle" fill="#8A93A3">'+rows[idx].d.slice(2)+'</text>');
   }
-  cross=document.createElementNS('http://www.w3.org/2000/svg','line');
-  cross.setAttribute('stroke','#FF8A1F');cross.setAttribute('stroke-width','1');
-  cross.setAttribute('y1',T);cross.setAttribute('y2',H-B);cross.setAttribute('opacity','0');
-  out.push(cross.outerHTML);
+  var cr=document.createElementNS('http://www.w3.org/2000/svg','line');
+  cr.setAttribute('stroke','#FF8A1F');cr.setAttribute('stroke-width','1');
+  cr.setAttribute('y1',T);cr.setAttribute('y2',H-B);cr.setAttribute('opacity','0');
+  out.push(cr.outerHTML);
   mainEl.innerHTML=out.join('');
-  cross=mainEl.querySelector('line[stroke="#FF8A1F"]');
-}
-
-function renderSub(){
-  var rows=D.slice(-120), W2=1000,H2=190,L=58,R2=18,Tp=12,Bp=22;
-  var mx=1; rows.forEach(function(x){mx=Math.max(mx,x.i,x.j);});
-  var base=Tp+(H2-Tp-Bp)*0.62;
-  var slot=(W2-L-R2)/rows.length, bw=Math.max(1,slot*0.36);
-  var X=function(i){return L+i*slot+slot/2;};
-  var out=['<line class="gl" x1="'+L+'" y1="'+base+'" x2="'+(W2-R2)+'" y2="'+base+'"/>'];
-  out.push('<text class="ax" x="4" y="'+(base+4)+'">0</text>');
-  rows.forEach(function(x,i){
-    var hi=(H2-Tp-Bp)*0.55*x.i/mx;
-    var hj=(H2-Tp-Bp)*0.40*x.j/mx;
-    if(hi>0.3) out.push('<rect x="'+(X(i)-bw)+'" y="'+(base-hi)+'" width="'+bw+'" height="'+hi+'" fill="#E8453C" opacity="0.85"/>');
-    if(hj>0.3) out.push('<rect x="'+(X(i)-bw)+'" y="'+base+'" width="'+bw+'" height="'+hj+'" fill="#1FB37A" opacity="0.85"/>');
-  });
-  for(var k=0;k<4;k++){
-    var idx=Math.round(k*(rows.length-1)/3);
-    out.push('<text class="ax" x="'+X(idx)+'" y="'+(H2-4)+'" text-anchor="middle">'+rows[idx].d.slice(2)+'</text>');
-  }
-  subEl.innerHTML=out.join('');
+  marks={cross:mainEl.querySelector('line[stroke="#FF8A1F"]')};
 }
 
 function renderTable(){
   var h='';
   D.slice(-10).reverse().forEach(function(x){
     var pv=PROV.indexOf(x.d)>=0?' <span style="color:#FF8A1F">未定稿</span>':'';
+    var spr=(x.npct!=null&&x.hp!=null)?(x.npct-x.hp):null;
     h+='<tr><td>'+x.d+pv+'</td><td class="up">'+x.i+'</td><td class="down">'+x.j+'</td>'
       +'<td class="'+col(x.n)+'">'+sg(x.n)+'</td><td class="'+col(x.s20)+'">'+sg(x.s20)+'</td>'
-      +'<td>'+(x.r20==null?'—':x.r20.toFixed(1)+'%')+'</td></tr>';
+      +'<td>'+p1(x.npct)+'</td><td>'+fmtPx(x.px)+'</td>'
+      +'<td class="'+(spr==null?'flat':col(spr))+'">'+(spr==null?'—':sg(spr.toFixed(1)))+'</td></tr>';
   });
   document.getElementById('tb').innerHTML=h;
 }
 
-function render(){renderMain();renderSub();renderTable();}
+function render(){renderMain();renderTable();}
 
 document.getElementById('rangeBar').addEventListener('click',function(e){
   var b=e.target.closest('.btn'); if(!b) return;
+  if(b.id==='tglPx'){showPx=!showPx;b.classList.toggle('on',showPx);renderMain();return;}
+  if(b.id==='tglHp'){showHp=!showHp;b.classList.toggle('on',showHp);renderMain();return;}
   curN=parseInt(b.dataset.n,10);
-  [].forEach.call(this.querySelectorAll('.btn'),function(x){x.classList.toggle('on',x===b);});
+  [].forEach.call(this.querySelectorAll('.btn[data-n]'),function(x){x.classList.toggle('on',x===b);});
   renderMain();
 });
 
@@ -176,25 +184,25 @@ mainEl.addEventListener('mousemove',function(e){
   if(!curRows.length) return;
   var r=mainEl.getBoundingClientRect();
   var sx=(e.clientX-r.left)/r.width*1000;
-  var idx=Math.round((sx-Lf)/(W-Lf-R)*(curRows.length-1));
+  var idx=Math.round((sx-Lf)/(W-Lf-Rr)*(curRows.length-1));
   idx=Math.max(0,Math.min(curRows.length-1,idx));
   var x=curRows[idx];
-  if(cross) cross.setAttribute('opacity','1'),cross.setAttribute('x1',Lf+idx*(W-Lf-R)/Math.max(1,curRows.length-1)),cross.setAttribute('x2',Lf+idx*(W-Lf-R)/Math.max(1,curRows.length-1));
+  var px=Lf+idx*(W-Lf-Rr)/Math.max(1,curRows.length-1);
+  if(marks.cross){marks.cross.setAttribute('opacity','1');marks.cross.setAttribute('x1',px);marks.cross.setAttribute('x2',px);}
+  var spr=(x.npct!=null&&x.hp!=null)?(x.npct-x.hp):null;
   tip.style.display='block';
-  tip.style.left=Math.min(window.innerWidth-230,e.clientX+14)+'px';
+  tip.style.left=Math.min(window.innerWidth-270,e.clientX+14)+'px';
   tip.style.top=(e.clientY+14)+'px';
   tip.innerHTML='<b>'+x.d+'</b>'+(PROV.indexOf(x.d)>=0?' <span style="color:#FF8A1F">未定稿</span>':'')
     +'<br>增持 <span class="up">'+x.i+'</span> 家 · 减持 <span class="down">'+x.j+'</span> 家'
-    +'<br>当日净 <span class="'+col(x.n)+'">'+sg(x.n)+'</span> 家'
-    +'<br>'+WIN+'日净 <span class="'+col(x.s20)+'">'+sg(x.s20)+'</span> 家'
-    +'<br>'+WIN+'日增持占比 '+(x.r20==null?'—':x.r20.toFixed(2)+'%')+' · 分位 '+(x.pct==null?'—':x.pct+'%');
+    +'<br>'+WIN+'日净 <span class="'+col(x.s20)+'">'+sg(x.s20)+'</span> 家 · 分位 '+p1(x.npct)
+    +'<br>沪深300 <span style="color:#F5A623">'+fmtPx(x.px)+'</span> · 分位 <span style="color:#A78BFA">'+p1(x.hp)+'</span>'
+    +'<br>分位差 <span class="'+col(spr)+'">'+(spr==null?'—':sg(spr.toFixed(1)))+'</span>'
+    +'<br><span style="color:#8A93A3">仅描述性对照，非买卖信号</span>';
 });
-mainEl.addEventListener('mouseleave',function(){tip.style.display='none';if(cross)cross.setAttribute('opacity','0');});
+mainEl.addEventListener('mouseleave',function(){tip.style.display='none';if(marks.cross)marks.cross.setAttribute('opacity','0');});
 
 document.getElementById('provBadge').textContent=PROV.length?'最近 '+PROV.length+' 日未定稿':'';
-
-// 过期警示：按「工作日」算滞后，避免周五数据到周一被误报。
-// 工作流只在周一至周五跑，连续缺 4 个工作日以上才认为是真过期。
 (function(){
   var asof=D[D.length-1].d;
   var today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
