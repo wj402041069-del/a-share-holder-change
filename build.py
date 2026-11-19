@@ -64,6 +64,40 @@ def http_json(params, tries=3):
     raise RuntimeError('东财接口失败：' + last)
 
 
+def cninfo_probe(date_str):
+    """巨潮资讯公告检索 —— 只做健康诊断，绝不参与出数。
+
+    两套口径不同：东财是结构化的「重要股东增减持记录」，巨潮是「标题含增减持的公告」，
+    同一天家数会不一样（实测 2026-11-19：东财 7 增/4 减，巨潮约 14 增/3 减）。
+    所以只用它判断「主源返回空到底是真没公告，还是主源挂了」。
+    失败一律返回 None，绝不让备源反过来把主流程搞挂。
+    """
+    url = 'http://www.cninfo.com.cn/new/hisAnnouncement/query'
+    headers = {
+        'User-Agent': 'Mozilla/5.0',
+        'Referer': 'http://www.cninfo.com.cn/new/commonUrl?url=disclosure/list/notice',
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+    }
+    total = 0
+    for kw in ('增持', '减持'):
+        payload = {
+            'pageNum': 1, 'pageSize': 30, 'column': 'szse', 'tabName': 'fulltext',
+            'plate': '', 'stock': '', 'searchkey': kw, 'secid': '', 'category': '',
+            'trade': '', 'seDate': '%s~%s' % (date_str, date_str),
+            'sortName': '', 'sortType': '', 'isHLtitle': 'true',
+        }
+        try:
+            req = urllib.request.Request(
+                url, data=urllib.parse.urlencode(payload).encode('utf-8'),
+                headers=headers, method='POST')
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                j = json.loads(resp.read().decode('utf-8'))
+            total += int(j.get('totalAnnouncement') or 0)
+        except Exception:
+            return None          # 备源不可用时保持沉默，不影响主流程
+    return total
+
+
 def fetch_range(start, end):
     params = {
         'reportName': 'RPT_SHARE_HOLDER_INCREASE',
@@ -117,7 +151,15 @@ def update_history(h, today):
     end = today.isoformat()
     rows = fetch_range(start, end)
     if not rows:
-        raise RuntimeError('回看窗口内 0 条记录，按失败处理，绝不覆盖历史')
+        probe = cninfo_probe(today.isoformat())
+        hint = ''
+        if probe is None:
+            hint = '（巨潮备源也未响应，无法判断）'
+        elif probe > 0:
+            hint = '（巨潮同期检索到 %d 条增减持公告 → 疑似主源缺数，不是真没公告）' % probe
+        else:
+            hint = '（巨潮同期也无增减持公告，可能是真的无公告日）'
+        raise RuntimeError('回看窗口内 0 条记录，按失败处理，绝不覆盖历史' + hint)
     fresh = aggregate(rows)
     if not fresh:
         raise RuntimeError('聚合后 0 天有效数据，按失败处理')
