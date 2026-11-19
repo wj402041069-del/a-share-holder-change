@@ -38,6 +38,7 @@ h1{font-size:20px;font-weight:700}
 .liftcard .lv{font-size:19px;font-weight:700;font-family:Consolas,monospace;color:#1F2937}
 .liftcard .ls{font-size:10.5px;color:#6B7280}
 #liftSvg{width:100%;height:110px;display:block}
+#amtSvg{width:100%;height:auto;display:block}
 svg{width:100%;height:auto;display:block;overflow:visible}
 .ax{font-size:11px;font-family:Consolas,monospace}
 .gl{stroke:var(--line);stroke-width:1}
@@ -63,7 +64,7 @@ th{color:var(--sub);font-weight:400}
 __KPI__
 
 <div class="card">
-  <div class="ct">净家数 vs 沪深300 <span class="cs">左轴净家数（红正绿负）· 右轴沪深300点位 / 分位，同轴鼠标联动</span></div>
+  <div class="ct">净家数 vs 沪深300 <span class="cs">左轴净家数（红正绿负）· 右轴沪深300点位 / 分位，与下方金额图同步窗口与鼠标</span></div>
   <div class="bar" id="rangeBar">
     <button class="btn" data-n="60">近 3 月</button>
     <button class="btn on" data-n="250">近 1 年</button>
@@ -71,9 +72,13 @@ __KPI__
     <button class="btn" data-n="0">全部</button>
     <button class="btn ix on" id="tglPx">沪深300 点位</button>
     <button class="btn rk" id="tglHp">沪深300 分位</button>
-    <button class="btn amt" id="tglAmt">切换金额口径</button>
   </div>
   <svg id="main" viewBox="0 0 1000 340" preserveAspectRatio="none"></svg>
+</div>
+
+<div class="card">
+  <div class="ct">净金额趋势（估算） <span class="cs">20 交易日累计净金额 · 亿元 · 与主图同步时间窗口；红正绿负</span></div>
+  <svg id="amtSvg" viewBox="0 0 1000 180" preserveAspectRatio="none"></svg>
 </div>
 
 <div class="card">
@@ -113,9 +118,8 @@ __KPI__
 
 <script>
 var D=__DATA__, PROV=__PROV__, WIN=__WIN__, LIFT=__LIFT__;
-var amountMode=false;
 var Lf=60,Rr=66,T=18,B=28,W=1000,H=340;
-var mainEl=document.getElementById('main'), tip=document.getElementById('tip');
+var mainEl=document.getElementById('main'), amtEl=document.getElementById('amtSvg'), tip=document.getElementById('tip');
 var curN=250, curRows=[], showPx=true, showHp=false, marks={};
 
 function col(v){return v>0?'#D92D20':(v<0?'#0E9F6E':'#6B7280');}
@@ -126,7 +130,7 @@ function fmtPx(v){return v==null?'—':v.toLocaleString('en-US',{minimumFraction
 function renderMain(){
   var rows=curN>0?D.slice(-curN):D;
   curRows=rows;
-  var key=amountMode?'s20a':'s20';
+  var key='s20';
   var vals=rows.map(function(x){return x[key];});
   var mx=Math.max.apply(null,vals.concat([10])), mn=Math.min.apply(null,vals.concat([-10]));
   var p=(mx-mn)*0.1; mx+=p; mn-=p;
@@ -140,7 +144,7 @@ function renderMain(){
   var out=[];
   [0,mn/2,mx/2].forEach(function(v){out.push('<line class="gl" x1="'+Lf+'" y1="'+Y(v)+'" x2="'+(W-Rr)+'" y2="'+Y(v)+'"/>');});
   out.push('<line x1="'+Lf+'" y1="'+Y(0)+'" x2="'+(W-Rr)+'" y2="'+Y(0)+'" stroke="#9CA3AF" stroke-width="1" stroke-dasharray="4 4"/>');
-  [mx,mn].forEach(function(v){out.push('<text class="ax" x="4" y="'+(Y(v)+4)+'" fill="#6B7280">'+(amountMode?v.toFixed(0):Math.round(v))+'</text>');});
+  [mx,mn].forEach(function(v){out.push('<text class="ax" x="4" y="'+(Y(v)+4)+'" fill="#6B7280">'+Math.round(v)+'</text>');});
   out.push('<text class="ax" x="4" y="'+(Y(0)+4)+'" fill="#6B7280">0</text>');
   if(showPx && pv.length){
     [pmx,pmn].forEach(function(v){out.push('<text class="ax" x="'+(W-Rr+6)+'" y="'+(YP(v)+4)+'" fill="#C7760B">'+Math.round(v)+'</text>');});
@@ -193,6 +197,34 @@ function renderTable(){
   document.getElementById('tb').innerHTML=h;
 }
 
+function renderAmt(){
+  var rows=curN>0?D.slice(-curN):D;
+  var vals=rows.map(function(x){return x.s20a;});
+  var mx=Math.max.apply(null,vals.concat([5])), mn=Math.min.apply(null,vals.concat([-5]));
+  var p=(mx-mn)*0.1; mx+=p; mn-=p;
+  var W2=1000,H2=180,L2=60,R2=18,T2=14,B2=24;
+  var X=function(i){return L2+i*(W2-L2-R2)/Math.max(1,rows.length-1);};
+  var Y=function(v){return T2+(mx-v)*(H2-T2-B2)/(mx-mn);};
+  var out=[];
+  [0,mn/2,mx/2].forEach(function(v){out.push('<line class="gl" x1="'+L2+'" y1="'+Y(v)+'" x2="'+(W2-R2)+'" y2="'+Y(v)+'"/>');});
+  out.push('<line x1="'+L2+'" y1="'+Y(0)+'" x2="'+(W2-R2)+'" y2="'+Y(0)+'" stroke="#9CA3AF" stroke-width="1" stroke-dasharray="4 4"/>');
+  [mx,mn].forEach(function(v){out.push('<text class="ax" x="4" y="'+(Y(v)+4)+'" fill="#6B7280">'+(v>0?'+':'')+v.toFixed(0)+'</text>');});
+  out.push('<text class="ax" x="4" y="'+(Y(0)+4)+'" fill="#6B7280">0</text>');
+  for(var i=1;i<rows.length;i++){
+    out.push('<line x1="'+X(i-1)+'" y1="'+Y(rows[i-1].s20a)+'" x2="'+X(i)+'" y2="'+Y(rows[i].s20a)+'" stroke="'+col(rows[i].s20a)+'" stroke-width="1.9"/>');
+  }
+  for(var k=0;k<4;k++){
+    var idx=Math.round(k*(rows.length-1)/3);
+    out.push('<text class="ax" x="'+X(idx)+'" y="'+(H2-4)+'" text-anchor="middle" fill="#6B7280">'+rows[idx].d.slice(2)+'</text>');
+  }
+  var cr=document.createElementNS('http://www.w3.org/2000/svg','line');
+  cr.setAttribute('stroke','#EA580C');cr.setAttribute('stroke-width','1');
+  cr.setAttribute('y1',T2);cr.setAttribute('y2',H2-B2);cr.setAttribute('opacity','0');
+  out.push(cr.outerHTML);
+  amtEl.innerHTML=out.join('');
+  marks.amtCross=amtEl.querySelector('line[stroke="#EA580C"]');
+}
+
 function renderLift(){
   var el=document.getElementById('liftSvg');
   if(!el||!LIFT||!Object.keys(LIFT).length){if(el)el.innerHTML='';return;}
@@ -209,19 +241,15 @@ function renderLift(){
   el.innerHTML=out.join('');
 }
 
-function render(){renderMain();renderTable();renderLift();}
+function render(){renderMain();renderAmt();renderTable();renderLift();}
 
 document.getElementById('rangeBar').addEventListener('click',function(e){
   var b=e.target.closest('.btn'); if(!b) return;
   if(b.id==='tglPx'){showPx=!showPx;b.classList.toggle('on',showPx);renderMain();return;}
   if(b.id==='tglHp'){showHp=!showHp;b.classList.toggle('on',showHp);renderMain();return;}
-  if(b.id==='tglAmt'){amountMode=!amountMode;b.classList.toggle('on',amountMode);
-    document.querySelector('.card .ct').innerHTML=(amountMode?'净金额 vs 沪深300':'净家数 vs 沪深300')
-      +' <span class="cs">左轴'+(amountMode?'净金额(亿元，股数×收盘估算)':'净家数')+' · 右轴沪深300，同轴鼠标联动</span>';
-    renderMain();return;}
   curN=parseInt(b.dataset.n,10);
   [].forEach.call(this.querySelectorAll('.btn[data-n]'),function(x){x.classList.toggle('on',x===b);});
-  renderMain();
+  renderMain();renderAmt();
 });
 
 mainEl.addEventListener('mousemove',function(e){
@@ -244,7 +272,32 @@ mainEl.addEventListener('mousemove',function(e){
     +'<br>分位差 <span class="'+col(spr)+'">'+(spr==null?'—':sg(spr.toFixed(1)))+'</span>'
     +'<br><span style="color:#6B7280">仅描述性对照，非买卖信号</span>';
 });
-mainEl.addEventListener('mouseleave',function(){tip.style.display='none';if(marks.cross)marks.cross.setAttribute('opacity','0');});
+function mouseMove(e,srcEl,sxScale,xCalc){
+  if(!curRows.length) return;
+  var r=srcEl.getBoundingClientRect();
+  var sx=sxScale(e.clientX-r.left);
+  var idx=Math.round(xCalc(sx));
+  idx=Math.max(0,Math.min(curRows.length-1,idx));
+  var x=curRows[idx];
+  if(marks.cross){marks.cross.setAttribute('opacity','1');var px=Lf+idx*(W-Lf-Rr)/Math.max(1,curRows.length-1);marks.cross.setAttribute('x1',px);marks.cross.setAttribute('x2',px);}
+  if(marks.amtCross){marks.amtCross.setAttribute('opacity','1');var px2=60+idx*(1000-60-18)/Math.max(1,curRows.length-1);marks.amtCross.setAttribute('x1',px2);marks.amtCross.setAttribute('x2',px2);}
+  var spr=(x.npct!=null&&x.hp!=null)?(x.npct-x.hp):null;
+  tip.style.display='block';
+  tip.style.left=Math.min(window.innerWidth-270,e.clientX+14)+'px';
+  tip.style.top=(e.clientY+14)+'px';
+  tip.innerHTML='<b>'+x.d+'</b>'+(PROV.indexOf(x.d)>=0?' <span style="color:#EA580C">未定稿</span>':'')
+    +'<br>增持 <span class="up">'+x.i+'</span> 家 · 减持 <span class="down">'+x.j+'</span> 家'
+    +'<br>'+WIN+'日净家数 <span class="'+col(x.s20)+'">'+sg(x.s20)+'</span>'
+    +'<br>'+WIN+'日净金额 <span class="'+col(x.s20a)+'">'+(x.s20a>0?'+':'')+x.s20a.toFixed(1)+'</span> 亿'
+    +'<br>沪深300 <span style="color:#C7760B">'+fmtPx(x.px)+'</span> · 分位 <span style="color:#7C3AED">'+p1(x.hp)+'</span>'
+    +'<br>分位差 <span class="'+col(spr)+'">'+(spr==null?'—':sg(spr.toFixed(1)))+'</span>'
+    +'<br><span style="color:#6B7280">仅描述性对照，非买卖信号</span>';
+}
+mainEl.addEventListener('mousemove',function(e){mouseMove(e,mainEl,function(v){return v/1000*1000;},function(v){return (v-Lf)/(W-Lf-Rr)*(curRows.length-1);});});
+amtEl.addEventListener('mousemove',function(e){mouseMove(e,amtEl,function(v){return v/1000*1000;},function(v){return (v-60)/(1000-60-18)*(curRows.length-1);});});
+function hideCross(){tip.style.display='none';if(marks.cross)marks.cross.setAttribute('opacity','0');if(marks.amtCross)marks.amtCross.setAttribute('opacity','0');}
+mainEl.addEventListener('mouseleave',hideCross);
+amtEl.addEventListener('mouseleave',hideCross);
 
 document.getElementById('provBadge').textContent=PROV.length?'最近 '+PROV.length+' 日未定稿':'';
 (function(){
