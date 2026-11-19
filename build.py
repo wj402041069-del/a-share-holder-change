@@ -271,7 +271,20 @@ def derive(days, hs=None):
     hp_map = dict(zip(hs_dates, rolling_rank([hs[d] for d in hs_dates])))
     for idx, x in enumerate(out):
         x['npct'] = npct[idx]
-        x['hp'] = hp_map.get(x['d'])
+        d = x['d']
+        if d in hs:
+            x['px'], x['hp'], x['px_cf'] = hs[d], hp_map[d], False
+        else:
+            # 公告日含周六与节假日，沪深300 没有这些日子的行情。
+            # 用「最近一个更早交易日」的收盘与分位做 carry-forward：
+            # 非交易日指数点位本来就不变，这是标准做法，不是编造数据；
+            # 前端 tooltip 会标注「非交易日沿用前收盘」。
+            j = bisect.bisect_right(hs_dates, d) - 1
+            if j >= 0:
+                dd = hs_dates[j]
+                x['px'], x['hp'], x['px_cf'] = hs[dd], hp_map[dd], True
+            else:
+                x['px'], x['hp'], x['px_cf'] = None, None, True
     vals = sorted(x['r20'] for x in out if x['r20'] is not None)
     for x in out:
         x['pct'] = (round(bisect.bisect_right(vals, x['r20']) / len(vals) * 100, 1)
