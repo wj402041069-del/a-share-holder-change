@@ -45,7 +45,7 @@ th{color:var(--sub);font-weight:400}
 <body>
 <div class="wrap">
 <header>
-  <div><h1>A股重要股东增减持家数 <span class="badge" id="asofBadge">__ASOF__</span></h1>
+  <div><h1>A股重要股东增减持家数 <span class="badge" id="asofBadge">__ASOF__</span><span class="badge warn" id="staleBadge" style="display:none"></span></h1>
   <div class="sub">公告日口径 · 按公司代码去重 · 主图看 __WIN__ 交易日累计净家数　<span id="provBadge" class="badge warn"></span></div></div>
   <div class="sub">数据截至 __ASOF__　生成于 __GEN__　共 __ROWS__ 个交易日</div>
 </header>
@@ -192,6 +192,24 @@ mainEl.addEventListener('mousemove',function(e){
 mainEl.addEventListener('mouseleave',function(){tip.style.display='none';if(cross)cross.setAttribute('opacity','0');});
 
 document.getElementById('provBadge').textContent=PROV.length?'最近 '+PROV.length+' 日未定稿':'';
+
+// 过期警示：按「工作日」算滞后，避免周五数据到周一被误报。
+// 工作流只在周一至周五跑，连续缺 4 个工作日以上才认为是真过期。
+(function(){
+  var asof=D[D.length-1].d;
+  var today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});
+  var d0=new Date(asof+'T00:00:00Z'), d1=new Date(today+'T00:00:00Z'), n=0;
+  while(d0<d1){
+    d0.setUTCDate(d0.getUTCDate()+1);
+    var wd=d0.getUTCDay();
+    if(wd!==0 && wd!==6) n++;
+  }
+  if(n>=4){
+    var b=document.getElementById('staleBadge');
+    b.textContent='⚠ 数据已过期 '+n+' 个工作日（截至 '+asof+'）';
+    b.style.display='inline-block';
+  }
+})();
 render();
 </script>
 </body>
