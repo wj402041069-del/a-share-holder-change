@@ -386,7 +386,7 @@ def render(h, rows, changed, raw_count, lift=None, lift_raw=0):
     data_json = json.dumps(rows, ensure_ascii=False, separators=(',', ':'))
     lift_json = json.dumps(lift, ensure_ascii=False, separators=(',', ':'))
     lift_total = round(sum(v['cap'] for v in lift.values()), 1)
-    lift_cnt = sum(v['cnt'] for v in lift.values())
+    lift_cnt = len(lift)   # 实际有解禁的交易日数（不是笔数）
     lift_peak = max(lift.items(), key=lambda kv: kv[1]['cap']) if lift else (None, {'cap': 0})
     lift_peak_day, lift_peak_val = lift_peak[0], round(lift_peak[1]['cap'], 1)
     prov_json = json.dumps(prov_dates, ensure_ascii=False)
