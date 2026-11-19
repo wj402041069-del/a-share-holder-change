@@ -31,6 +31,13 @@ h1{font-size:20px;font-weight:700}
 .btn.on{background:rgba(234,88,12,.10);border-color:rgba(234,88,12,.45);color:var(--accent)}
 .btn.ix.on{background:rgba(199,118,11,.10);border-color:rgba(199,118,11,.45);color:var(--idx)}
 .btn.rk.on{background:rgba(124,58,237,.10);border-color:rgba(124,58,237,.40);color:var(--rank)}
+.btn.amt.on{background:rgba(13,148,136,.10);border-color:rgba(13,148,136,.40);color:#0D9488}
+.liftgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}
+.liftcard{background:#F8FAFC;border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.liftcard .lk{font-size:11px;color:#6B7280}
+.liftcard .lv{font-size:19px;font-weight:700;font-family:Consolas,monospace;color:#1F2937}
+.liftcard .ls{font-size:10.5px;color:#6B7280}
+#liftSvg{width:100%;height:110px;display:block}
 svg{width:100%;height:auto;display:block;overflow:visible}
 .ax{font-size:11px;font-family:Consolas,monospace}
 .gl{stroke:var(--line);stroke-width:1}
@@ -64,13 +71,24 @@ __KPI__
     <button class="btn" data-n="0">全部</button>
     <button class="btn ix on" id="tglPx">沪深300 点位</button>
     <button class="btn rk" id="tglHp">沪深300 分位</button>
+    <button class="btn amt" id="tglAmt">切换金额口径</button>
   </div>
   <svg id="main" viewBox="0 0 1000 340" preserveAspectRatio="none"></svg>
 </div>
 
 <div class="card">
+  <div class="ct">未来 30 天解禁压力 <span class="cs">东财限售解禁 · 日历确定 · 前瞻指标</span></div>
+  <div class="liftgrid">
+    <div class="liftcard"><div class="lk">30 天解禁总市值</div><div class="lv">__LIFTTOTAL__ <span style="font-size:12px">亿元</span></div><div class="ls">__LIFTRAW__ 笔解禁 · __LIFTCOUNT__ 个交易日</div></div>
+    <div class="liftcard"><div class="lk">单日峰值</div><div class="lv">__LIFTVAL__ <span style="font-size:12px">亿元</span></div><div class="ls">__LIFTDAY__</div></div>
+    <div class="liftcard"><div class="lk">怎么读</div><div class="lv" style="font-size:13px;color:#C7760B">供给压力</div><div class="ls">解禁≠减持，只是"可卖的筹码变多"</div></div>
+  </div>
+  <svg id="liftSvg" viewBox="0 0 1000 110" preserveAspectRatio="none"></svg>
+</div>
+
+<div class="card">
   <div class="ct">最近 10 个交易日</div>
-  <table><thead><tr><th>公告日</th><th>增持</th><th>减持</th><th>净家数</th><th>__WIN__日累计</th><th>净家数分位</th><th>沪深300</th><th>分位差</th></tr></thead>
+  <table><thead><tr><th>公告日</th><th>增持</th><th>减持</th><th>净家数</th><th>净金额(亿)</th><th>__WIN__日累计</th><th>净家数分位</th><th>沪深300</th><th>分位差</th></tr></thead>
   <tbody id="tb"></tbody></table>
 </div>
 
@@ -82,6 +100,8 @@ __KPI__
     <li><b>家数</b>：按证券代码去重的<b>公司家数</b>。同一公司多个股东同日增减持只算 1 家；一条公告 ≠ 一家公司。</li>
     <li><b>方向</b>：只认 DIRECTION 字段。数据源存在「减持但数量为正」的记录，符号字段不可靠。</li>
     <li><b>基准线</b>：这套披露口径天然「减持多于增持」（减持多为法定强制披露、增持多为自愿），日均约增 3 家 / 减 15 家。<b>50% 不是中性线</b>，卡片里的「历史中位」才是这套序列自己的荣枯基准，判断冷热请优先看「历史分位」。</li>
+    <li><b>金额口径</b>：金额 = 变动股数(CHANGE_NUM，万股) × 当日收盘价 ÷ 10000 = 亿元。约 3% 记录缺收盘价按 0 计，故金额为<b>估算值</b>，用于看相对趋势与量级，不做精确核算。因口径天然减持多于增持，净金额中位数同样为负。</li>
+    <li><b>解禁压力</b>：东财 `RPT_LIFT_STAGE` 未来 30 天限售解禁，解禁日是日历确定的，不是预测。解禁 ≠ 减持，只代表「可卖筹码变多」，与实际减持行为并列观察。抓取失败沿用 `lift.json` 缓存并标缺失。</li>
     <li><b>沪深300 对照</b>：腾讯日K（`sh000300`），独立宿主；分位是各自 250 交易日滚动 percentile rank（0–100），「分位差 = 净家数分位 − 沪深300分位」只作<b>描述性背离读数</b>。实测两者与未来 20 日收益相关性仅约 0.1，<b>不是买卖信号</b>，也没有增设分档出手规则。</li>
     <li><b>滞后</b>：公告在 17:00–19:00 才陆续入库，最近 1–2 日标注「未定稿」，隔日回看才稳定。</li>
     <li><b>用途</b>：这是<b>披露口径的股东行为宽度</b>，用于观察趋势和极值，不构成买卖建议。</li>
@@ -92,7 +112,8 @@ __KPI__
 <div id="tip"></div>
 
 <script>
-var D=__DATA__, PROV=__PROV__, WIN=__WIN__;
+var D=__DATA__, PROV=__PROV__, WIN=__WIN__, LIFT=__LIFT__;
+var amountMode=false;
 var Lf=60,Rr=66,T=18,B=28,W=1000,H=340;
 var mainEl=document.getElementById('main'), tip=document.getElementById('tip');
 var curN=250, curRows=[], showPx=true, showHp=false, marks={};
@@ -105,7 +126,8 @@ function fmtPx(v){return v==null?'—':v.toLocaleString('en-US',{minimumFraction
 function renderMain(){
   var rows=curN>0?D.slice(-curN):D;
   curRows=rows;
-  var vals=rows.map(function(x){return x.s20;});
+  var key=amountMode?'s20a':'s20';
+  var vals=rows.map(function(x){return x[key];});
   var mx=Math.max.apply(null,vals.concat([10])), mn=Math.min.apply(null,vals.concat([-10]));
   var p=(mx-mn)*0.1; mx+=p; mn-=p;
   var pv=rows.map(function(x){return x.px;}).filter(function(v){return v!=null;});
@@ -118,7 +140,7 @@ function renderMain(){
   var out=[];
   [0,mn/2,mx/2].forEach(function(v){out.push('<line class="gl" x1="'+Lf+'" y1="'+Y(v)+'" x2="'+(W-Rr)+'" y2="'+Y(v)+'"/>');});
   out.push('<line x1="'+Lf+'" y1="'+Y(0)+'" x2="'+(W-Rr)+'" y2="'+Y(0)+'" stroke="#9CA3AF" stroke-width="1" stroke-dasharray="4 4"/>');
-  [mx,mn].forEach(function(v){out.push('<text class="ax" x="4" y="'+(Y(v)+4)+'" fill="#6B7280">'+Math.round(v)+'</text>');});
+  [mx,mn].forEach(function(v){out.push('<text class="ax" x="4" y="'+(Y(v)+4)+'" fill="#6B7280">'+(amountMode?v.toFixed(0):Math.round(v))+'</text>');});
   out.push('<text class="ax" x="4" y="'+(Y(0)+4)+'" fill="#6B7280">0</text>');
   if(showPx && pv.length){
     [pmx,pmn].forEach(function(v){out.push('<text class="ax" x="'+(W-Rr+6)+'" y="'+(YP(v)+4)+'" fill="#C7760B">'+Math.round(v)+'</text>');});
@@ -126,7 +148,7 @@ function renderMain(){
   if(showHp){[0,50,100].forEach(function(v){out.push('<text class="ax" x="'+(W-Rr+6)+'" y="'+(YR(v)+4)+'" fill="#7C3AED">'+v+'</text>');});}
   var i,began,d;
   for(i=1;i<rows.length;i++){
-    out.push('<line x1="'+X(i-1)+'" y1="'+Y(rows[i-1].s20)+'" x2="'+X(i)+'" y2="'+Y(rows[i].s20)+'" stroke="'+col(rows[i].s20)+'" stroke-width="1.9"/>');
+    out.push('<line x1="'+X(i-1)+'" y1="'+Y(rows[i-1][key])+'" x2="'+X(i)+'" y2="'+Y(rows[i][key])+'" stroke="'+col(rows[i][key])+'" stroke-width="1.9"/>');
   }
   if(showPx){
     began=false;d='';
@@ -157,24 +179,46 @@ function renderMain(){
 }
 
 function renderTable(){
-  var h='';
+  var h='', a0=0;
   D.slice(-10).reverse().forEach(function(x){
     var pv=PROV.indexOf(x.d)>=0?' <span style="color:#EA580C">未定稿</span>':'';
     var spr=(x.npct!=null&&x.hp!=null)?(x.npct-x.hp):null;
     h+='<tr><td>'+x.d+pv+'</td><td class="up">'+x.i+'</td><td class="down">'+x.j+'</td>'
-      +'<td class="'+col(x.n)+'">'+sg(x.n)+'</td><td class="'+col(x.s20)+'">'+sg(x.s20)+'</td>'
+      +'<td class="'+col(x.n)+'">'+sg(x.n)+'</td>'
+      +'<td class="'+col(x.n-a0)+'">'+(x.ia-x.ja).toFixed(2)+'</td>'
+      +'<td class="'+col(x.s20)+'">'+sg(x.s20)+'</td>'
       +'<td>'+p1(x.npct)+'</td><td>'+fmtPx(x.px)+'</td>'
       +'<td class="'+(spr==null?'flat':col(spr))+'">'+(spr==null?'—':sg(spr.toFixed(1)))+'</td></tr>';
   });
   document.getElementById('tb').innerHTML=h;
 }
 
-function render(){renderMain();renderTable();}
+function renderLift(){
+  var el=document.getElementById('liftSvg');
+  if(!el||!LIFT||!Object.keys(LIFT).length){if(el)el.innerHTML='';return;}
+  var ds=Object.keys(LIFT).sort();
+  var mx=1; ds.forEach(function(d){mx=Math.max(mx,LIFT[d].cap);});
+  var W2=1000,H2=110,L=6,R2=6,Tp=8,Bp=22;
+  var slot=(W2-L-R2)/ds.length, bw=Math.max(2,slot*0.6);
+  var out=[];
+  ds.forEach(function(d,i){
+    var v=LIFT[d].cap, h=(H2-Tp-Bp)*v/mx;
+    out.push('<rect x="'+(L+i*slot+(slot-bw)/2)+'" y="'+(H2-Bp-h)+'" width="'+bw+'" height="'+h+'" fill="#C7760B" opacity="0.75"><title>'+d+' '+v+'亿</title></rect>');
+    if(i%5===0)out.push('<text x="'+(L+i*slot+slot/2)+'" y="'+(H2-4)+'" font-size="10" fill="#6B7280" text-anchor="middle">'+d.slice(5)+'</text>');
+  });
+  el.innerHTML=out.join('');
+}
+
+function render(){renderMain();renderTable();renderLift();}
 
 document.getElementById('rangeBar').addEventListener('click',function(e){
   var b=e.target.closest('.btn'); if(!b) return;
   if(b.id==='tglPx'){showPx=!showPx;b.classList.toggle('on',showPx);renderMain();return;}
   if(b.id==='tglHp'){showHp=!showHp;b.classList.toggle('on',showHp);renderMain();return;}
+  if(b.id==='tglAmt'){amountMode=!amountMode;b.classList.toggle('on',amountMode);
+    document.querySelector('.card .ct').innerHTML=(amountMode?'净金额 vs 沪深300':'净家数 vs 沪深300')
+      +' <span class="cs">左轴'+(amountMode?'净金额(亿元，股数×收盘估算)':'净家数')+' · 右轴沪深300，同轴鼠标联动</span>';
+    renderMain();return;}
   curN=parseInt(b.dataset.n,10);
   [].forEach.call(this.querySelectorAll('.btn[data-n]'),function(x){x.classList.toggle('on',x===b);});
   renderMain();
@@ -195,7 +239,7 @@ mainEl.addEventListener('mousemove',function(e){
   tip.style.top=(e.clientY+14)+'px';
   tip.innerHTML='<b>'+x.d+'</b>'+(PROV.indexOf(x.d)>=0?' <span style="color:#EA580C">未定稿</span>':'')
     +'<br>增持 <span class="up">'+x.i+'</span> 家 · 减持 <span class="down">'+x.j+'</span> 家'
-    +'<br>'+WIN+'日净 <span class="'+col(x.s20)+'">'+sg(x.s20)+'</span> 家 · 分位 '+p1(x.npct)
+    +'<br>'+WIN+'日净 <span class="'+col(x.s20)+'">'+sg(x.s20)+'</span> 家 / <span class="'+col(x.s20a)+'">'+(x.s20a>0?'+':'')+x.s20a.toFixed(1)+'</span> 亿 · 分位 '+p1(x.npct)
     +'<br>沪深300 <span style="color:#C7760B">'+fmtPx(x.px)+'</span>'+(x.px_cf?'<span style="color:#6B7280">（非交易日沿用前收盘）</span>':'') +' · 分位 <span style="color:#7C3AED">'+p1(x.hp)+'</span>'
     +'<br>分位差 <span class="'+col(spr)+'">'+(spr==null?'—':sg(spr.toFixed(1)))+'</span>'
     +'<br><span style="color:#6B7280">仅描述性对照，非买卖信号</span>';
