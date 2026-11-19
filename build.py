@@ -31,6 +31,9 @@ HISTORY = os.path.join(BASE, 'history.json')
 OUT_DIR = os.path.join(BASE, 'docs')
 OUT = os.path.join(OUT_DIR, 'index.html')
 HS_HISTORY = os.path.join(BASE, 'hs300.json')
+LIFT_HISTORY = os.path.join(BASE, 'lift.json')
+LIFT_DAYS = 30        # 解禁看未来 30 天
+LIFT_API = 'https://datacenter-web.eastmoney.com/api/data/v1/get'
 
 API = 'https://datacenter-web.eastmoney.com/api/data/v1/get'
 PAGE_SIZE = 500
@@ -63,6 +66,60 @@ def http_json(params, tries=3):
             if k < tries - 1:
                 time.sleep(2 * (k + 1))
     raise RuntimeError('东财接口失败：' + last)
+
+
+def fetch_lift(today):
+    """东财限售解禁：抓未来 LIFT_DAYS 天，按日聚合市值(亿元)与家数。"""
+    end = today + datetime.timedelta(days=LIFT_DAYS)
+    params = {
+        'reportName': 'RPT_LIFT_STAGE', 'columns': 'ALL',
+        'source': 'WEB', 'client': 'WEB', 'pageSize': 500, 'pageNumber': 1,
+        'sortColumns': 'FREE_DATE', 'sortTypes': '1',
+        'filter': "(FREE_DATE>='%s')(FREE_DATE<='%s')" % (today.isoformat(), end.isoformat()),
+    }
+    rows = []
+    page = 1
+    while page <= 10:
+        params['pageNumber'] = page
+        url = LIFT_API + '?' + urllib.parse.urlencode(params)
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            j = json.loads(resp.read().decode('utf-8'))
+        r = j.get('result')
+        if not r:
+            raise RuntimeError('解禁接口空 result')
+        rows.extend(r.get('data') or [])
+        if page >= int(r.get('pages') or 1):
+            break
+        page += 1
+        time.sleep(0.1)
+    by = defaultdict(lambda: {'cap': 0.0, 'cnt': 0, 'top': None, 'top_cap': 0.0})
+    for row in rows:
+        d = (row.get('FREE_DATE') or '')[:10]
+        if not d:
+            continue
+        try:
+            cap = float(row.get('LIFT_MARKET_CAP') or 0) / 10000.0  # 万元 -> 亿元
+        except Exception:
+            cap = 0.0
+        by[d]['cap'] += cap
+        by[d]['cnt'] += 1
+        if cap > by[d]['top_cap']:
+            by[d]['top_cap'] = cap
+            by[d]['top'] = row.get('SECURITY_NAME_ABBR') or row.get('SECURITY_CODE')
+    return {d: {'cap': round(v['cap'], 2), 'cnt': v['cnt'],
+                'top': v['top'], 'top_cap': round(v['top_cap'], 2)}
+            for d, v in by.items()}, len(rows)
+
+
+def load_lift():
+    if not os.path.exists(LIFT_HISTORY):
+        return {}
+    try:
+        with open(LIFT_HISTORY, encoding='utf-8') as f:
+            return json.load(f).get('days') or {}
+    except Exception:
+        return {}
 
 
 def fetch_hs300(start, end):
@@ -167,8 +224,13 @@ def fetch_range(start, end):
 
 
 def aggregate(rows):
-    """按公告日聚合：每天增持/减持各自的去重公司数。"""
-    by = defaultdict(lambda: {'增持': set(), '减持': set()})
+    """按公告日聚合：去重公司数 + 估算金额（亿元）。
+
+    金额 = CHANGE_NUM(万股) × CLOSE_PRICE(元) ÷ 10000 = 亿元。
+    CLOSE_PRICE 缺失(约3%)时该条金额按 0 计，不影响家数。
+    """
+    by = defaultdict(lambda: {'增持': set(), '减持': set(),
+                              'inc_amt': 0.0, 'dec_amt': 0.0})
     for row in rows:
         d = (row.get('NOTICE_DATE') or '')[:10]
         direction = row.get('DIRECTION')
@@ -176,7 +238,14 @@ def aggregate(rows):
         if not d or not code or direction not in ('增持', '减持'):
             continue
         by[d][direction].add(code)
-    return {d: {'inc': len(v['增持']), 'dec': len(v['减持'])}
+        try:
+            amt = float(row.get('CHANGE_NUM') or 0) * float(row.get('CLOSE_PRICE') or 0) / 10000.0
+        except Exception:
+            amt = 0.0
+        if amt > 0:
+            by[d]['inc_amt' if direction == '增持' else 'dec_amt'] += amt
+    return {d: {'inc': len(v['增持']), 'dec': len(v['减持']),
+                'inc_amt': round(v['inc_amt'], 4), 'dec_amt': round(v['dec_amt'], 4)}
             for d, v in by.items()}
 
 
@@ -214,7 +283,9 @@ def update_history(h, today):
         old = h['days'].get(d)
         if old != v:
             changed += 1
-        h['days'][d] = {'inc': v['inc'], 'dec': v['dec'], 'updated': stamp}
+        h['days'][d] = {'inc': v['inc'], 'dec': v['dec'],
+                        'inc_amt': v.get('inc_amt', 0), 'dec_amt': v.get('dec_amt', 0),
+                        'updated': stamp}
 
     # 保留最近 5 年，防止文件无限增长
     cutoff = (today - datetime.timedelta(days=MAX_HISTORY_DAYS)).isoformat()
@@ -237,8 +308,9 @@ def backfill_history(today):
     stamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     h = {
         'schema': 1, 'asof': max(fresh), 'generated_at': stamp, 'last_raw': len(rows),
-        'days': {d: {'inc': v['inc'], 'dec': v['dec'], 'updated': stamp}
-                 for d, v in fresh.items()},
+        'days': {d: {'inc': v['inc'], 'dec': v['dec'],
+                     'inc_amt': v.get('inc_amt', 0), 'dec_amt': v.get('dec_amt', 0),
+                     'updated': stamp} for d, v in fresh.items()},
     }
     return h, 0, len(rows)
 
@@ -252,18 +324,25 @@ def derive(days, hs=None):
     for d in dates:
         i = int(days[d].get('inc') or 0)
         j = int(days[d].get('dec') or 0)
+        ia = float(days[d].get('inc_amt') or 0)
+        ja = float(days[d].get('dec_amt') or 0)
         incs.append(i)
         w = incs[-WIN:]
         si, sj = i, j
+        sia, sja = ia, ja
         for k in range(1, min(WIN, len(incs))):
             pd = dates[len(incs) - 1 - k]
             si += int(days[pd].get('inc') or 0)
             sj += int(days[pd].get('dec') or 0)
+            sia += float(days[pd].get('inc_amt') or 0)
+            sja += float(days[pd].get('dec_amt') or 0)
         net = i - j
         s20 = si - sj
         r20 = round(si / (si + sj) * 100, 2) if (si + sj) else None
         out.append({'d': d, 'i': i, 'j': j, 'n': net,
                     's20': s20, 'si20': si, 'sj20': sj, 'r20': r20,
+                    'ia': round(ia, 3), 'ja': round(ja, 3),
+                    's20a': round(sia - sja, 2),
                     'px': hs.get(d)})
     # 两条序列各自算 250 日滚动分位，差值才是同量纲背离
     npct = rolling_rank([x['s20'] for x in out])
@@ -293,16 +372,23 @@ def derive(days, hs=None):
 
 
 # ---------------------------------------------------------------- 页面
-def render(h, rows, changed, raw_count):
+def render(h, rows, changed, raw_count, lift=None, lift_raw=0):
     last = rows[-1]
     asof = h['asof']
     gen = h.get('generated_at') or '-'
     provisional = rows[-2:]
     prov_dates = [x['d'] for x in provisional]
+    lift = lift or {}
+    lift_ok = bool(lift)
     hs_ok = any(x.get('px') is not None for x in rows)
     hs_badge = ('沪深300 对照已接入' if hs_ok
                 else '沪深300 对照暂缺（不影响主数据）')
     data_json = json.dumps(rows, ensure_ascii=False, separators=(',', ':'))
+    lift_json = json.dumps(lift, ensure_ascii=False, separators=(',', ':'))
+    lift_total = round(sum(v['cap'] for v in lift.values()), 1)
+    lift_cnt = sum(v['cnt'] for v in lift.values())
+    lift_peak = max(lift.items(), key=lambda kv: kv[1]['cap']) if lift else (None, {'cap': 0})
+    lift_peak_day, lift_peak_val = lift_peak[0], round(lift_peak[1]['cap'], 1)
     prov_json = json.dumps(prov_dates, ensure_ascii=False)
 
     def jt(v):
@@ -335,6 +421,12 @@ def render(h, rows, changed, raw_count):
                     .replace('__DATA__', data_json) \
                     .replace('__PROV__', prov_json) \
                     .replace('__HSBADGE__', hs_badge) \
+                    .replace('__LIFT__', lift_json) \
+                    .replace('__LIFTTOTAL__', str(lift_total)) \
+                    .replace('__LIFTCOUNT__', str(lift_cnt)) \
+                    .replace('__LIFTDAY__', str(lift_peak_day)) \
+                    .replace('__LIFTVAL__', str(lift_peak_val)) \
+                    .replace('__LIFTRAW__', str(lift_raw)) \
                     .replace('__ASOF__', html.escape(asof)) \
                     .replace('__GEN__', html.escape(gen)) \
                     .replace('__WIN__', str(WIN)) \
@@ -366,15 +458,32 @@ def main():
     except Exception as e:
         print('沪深300 抓取失败，沿用本地缓存：' + str(e)[:140])
 
+    # 解禁：抓新失败沿用本地 lift.json 缓存
+    lift = load_lift()
+    lift_fresh = False
+    lift_raw = 0
+    try:
+        fresh_lift, lift_raw = fetch_lift(today)
+        if fresh_lift:
+            lift = fresh_lift
+            lift_fresh = True
+    except Exception as e:
+        print('解禁抓取失败，沿用本地缓存：' + str(e)[:140])
+
     rows = derive(h['days'], hs)
     if len(rows) < 60:
         raise RuntimeError('有效交易日不足 60，拒绝覆盖页面')
     os.makedirs(OUT_DIR, exist_ok=True)
-    page = render(h, rows, changed, int(h.get('last_raw') or raw_count))
+    page = render(h, rows, changed, int(h.get('last_raw') or raw_count), lift, lift_raw)
     with open(OUT, 'w', encoding='utf-8', newline='\n') as f:
         f.write(page)
     with open(HISTORY, 'w', encoding='utf-8', newline='\n') as f:
         json.dump(h, f, ensure_ascii=False, indent=1, sort_keys=True)
+    if lift_fresh or not os.path.exists(LIFT_HISTORY):
+        with open(LIFT_HISTORY, 'w', encoding='utf-8', newline='\n') as f:
+            json.dump({'asof': today.isoformat(),
+                       'generated_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                       'days': lift}, f, ensure_ascii=False, indent=1, sort_keys=True)
     if hs_fresh or not os.path.exists(HS_HISTORY):
         with open(HS_HISTORY, 'w', encoding='utf-8', newline='\n') as f:
             json.dump({'asof': max(hs) if hs else None,
@@ -387,6 +496,10 @@ def main():
     print('沪深300 对照 %d 天（%s）'
           % (sum(1 for x in rows if x.get('px') is not None),
              '本次新抓' if hs_fresh else '沿用缓存' if hs else '缺失'))
+    _lc = sum(v['cnt'] for v in lift.values())
+    _lt = round(sum(v['cap'] for v in lift.values()), 1)
+    print('解禁未来%d天 %d 条 / %.1f 亿元（%s）'
+          % (LIFT_DAYS, _lc, _lt, '本次新抓' if lift_fresh else '沿用缓存' if lift else '缺失'))
     print('written', OUT, os.path.getsize(OUT), 'bytes')
 
 
