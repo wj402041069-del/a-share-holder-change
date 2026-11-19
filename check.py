@@ -39,6 +39,16 @@ ck('历史中位' in page and '50% 不是中性线' in page, '基准线口径说
 ck('未定稿' in page, '滞后提示存在')
 ck('staleBadge' in page and '数据已过期' in page, '过期警示存在')
 
+hp = os.path.join(BASE, 'hs300.json')
+if os.path.exists(hp):
+    hsd = json.load(io.open(hp, encoding='utf-8')).get('data') or {}
+    ck(len(hsd) >= 200, '沪深300 日K至少 200 根（实际 %d）' % len(hsd))
+else:
+    print('WARN  hs300.json 不存在（页面会标「对照暂缺」，允许发布）')
+ck('沪深300 对照' in page and '__HSBADGE__' not in page, '沪深300 对照说明存在且占位符已替换')
+ck('分位差' in page and 'npct' in page, '分位差字段已接入')
+ck('每日增持 / 减持家数' not in page, '日度柱已按要求移除')
+
 # 凭据红线：仓库内不得出现任何密钥
 all_text = ''
 for root, _, files in os.walk(BASE):
