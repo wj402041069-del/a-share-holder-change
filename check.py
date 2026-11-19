@@ -37,6 +37,7 @@ ck(not re.search(r'__[A-Z]+__', page), '页面无未替换占位符')
 ck('var D=' in page and 'render();' in page, '页面渲染入口存在')
 ck('历史中位' in page and '50% 不是中性线' in page, '基准线口径说明存在')
 ck('未定稿' in page, '滞后提示存在')
+ck('staleBadge' in page and '数据已过期' in page, '过期警示存在')
 
 # 凭据红线：仓库内不得出现任何密钥
 all_text = ''
