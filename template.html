@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#181A20">
+<meta name="theme-color" content="#F5F7FA">
 <title>A股股东增减持家数</title>
 <style>
-:root{--bg:#181A20;--panel:#1E2128;--line:#2A2F39;--txt:#D6DAE1;--sub:#8A93A3;--accent:#FF8A1F;--up:#E8453C;--down:#1FB37A;--idx:#F5A623;--rank:#A78BFA}
+:root{--bg:#F5F7FA;--panel:#FFFFFF;--line:#E2E6ED;--txt:#1F2937;--sub:#6B7280;--accent:#EA580C;--up:#D92D20;--down:#0E9F6E;--idx:#C7760B;--rank:#7C3AED}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--txt);font:14px/1.6 "Microsoft YaHei","PingFang SC",-apple-system,"Segoe UI",sans-serif;padding:16px}
 .wrap{max-width:1180px;margin:0 auto}
@@ -14,7 +14,7 @@ header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:fle
 h1{font-size:20px;font-weight:700}
 .sub{font-size:12px;color:var(--sub);margin-top:2px}
 .badge{display:inline-block;padding:2px 8px;border:1px solid var(--line);border-radius:10px;font-size:11px;color:var(--sub);margin-left:6px;font-weight:400}
-.badge.warn{color:var(--accent);border-color:rgba(255,138,31,.5)}
+.badge.warn{color:var(--accent);border-color:rgba(234,88,12,.4)}
 .badge.idx{color:var(--idx);border-color:rgba(245,166,35,.45)}
 .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
 .kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
@@ -22,19 +22,19 @@ h1{font-size:20px;font-weight:700}
 .kv{font-size:23px;font-weight:700;line-height:1.35;font-family:Consolas,monospace}
 .ks{font-size:11px;color:var(--sub)}
 .up{color:var(--up)}.down{color:var(--down)}.flat{color:var(--sub)}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(15,23,42,.05)}
 .ct{font-size:13px;font-weight:600;margin-bottom:6px}
 .cs{font-size:11px;color:var(--sub);font-weight:400;margin-left:8px}
 .bar{display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap}
 .btn{border:1px solid var(--line);background:transparent;color:var(--sub);padding:4px 10px;border-radius:7px;font-size:12px;cursor:pointer}
 .btn:hover{color:var(--txt)}
-.btn.on{background:rgba(255,138,31,.14);border-color:rgba(255,138,31,.55);color:var(--accent)}
-.btn.ix.on{background:rgba(245,166,35,.14);border-color:rgba(245,166,35,.55);color:var(--idx)}
-.btn.rk.on{background:rgba(167,139,250,.16);border-color:rgba(167,139,250,.55);color:var(--rank)}
+.btn.on{background:rgba(234,88,12,.10);border-color:rgba(234,88,12,.45);color:var(--accent)}
+.btn.ix.on{background:rgba(199,118,11,.10);border-color:rgba(199,118,11,.45);color:var(--idx)}
+.btn.rk.on{background:rgba(124,58,237,.10);border-color:rgba(124,58,237,.40);color:var(--rank)}
 svg{width:100%;height:auto;display:block;overflow:visible}
 .ax{font-size:11px;font-family:Consolas,monospace}
 .gl{stroke:var(--line);stroke-width:1}
-#tip{position:fixed;display:none;pointer-events:none;z-index:9;background:#0F1116;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px;line-height:1.7;box-shadow:0 6px 18px rgba(0,0,0,.45);white-space:nowrap}
+#tip{position:fixed;display:none;pointer-events:none;z-index:9;background:#FFFFFF;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px;line-height:1.7;box-shadow:0 6px 18px rgba(15,23,42,.14);white-space:nowrap}
 table{width:100%;border-collapse:collapse;font-size:12px}
 th,td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:right;font-family:Consolas,monospace}
 th:first-child,td:first-child{text-align:left}
@@ -97,7 +97,7 @@ var Lf=60,Rr=66,T=18,B=28,W=1000,H=340;
 var mainEl=document.getElementById('main'), tip=document.getElementById('tip');
 var curN=250, curRows=[], showPx=true, showHp=false, marks={};
 
-function col(v){return v>0?'#E8453C':(v<0?'#1FB37A':'#8A93A3');}
+function col(v){return v>0?'#D92D20':(v<0?'#0E9F6E':'#6B7280');}
 function sg(v){return (v>0?'+':'')+v;}
 function p1(v){return v==null?'—':v.toFixed(1)+'%';}
 function fmtPx(v){return v==null?'—':v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
@@ -117,13 +117,13 @@ function renderMain(){
   var YR=function(v){return T+(100-v)*(H-T-B)/100;};
   var out=[];
   [0,mn/2,mx/2].forEach(function(v){out.push('<line class="gl" x1="'+Lf+'" y1="'+Y(v)+'" x2="'+(W-Rr)+'" y2="'+Y(v)+'"/>');});
-  out.push('<line x1="'+Lf+'" y1="'+Y(0)+'" x2="'+(W-Rr)+'" y2="'+Y(0)+'" stroke="#6B7280" stroke-width="1" stroke-dasharray="4 4"/>');
-  [mx,mn].forEach(function(v){out.push('<text class="ax" x="4" y="'+(Y(v)+4)+'" fill="#8A93A3">'+Math.round(v)+'</text>');});
-  out.push('<text class="ax" x="4" y="'+(Y(0)+4)+'" fill="#8A93A3">0</text>');
+  out.push('<line x1="'+Lf+'" y1="'+Y(0)+'" x2="'+(W-Rr)+'" y2="'+Y(0)+'" stroke="#9CA3AF" stroke-width="1" stroke-dasharray="4 4"/>');
+  [mx,mn].forEach(function(v){out.push('<text class="ax" x="4" y="'+(Y(v)+4)+'" fill="#6B7280">'+Math.round(v)+'</text>');});
+  out.push('<text class="ax" x="4" y="'+(Y(0)+4)+'" fill="#6B7280">0</text>');
   if(showPx && pv.length){
-    [pmx,pmn].forEach(function(v){out.push('<text class="ax" x="'+(W-Rr+6)+'" y="'+(YP(v)+4)+'" fill="#F5A623">'+Math.round(v)+'</text>');});
+    [pmx,pmn].forEach(function(v){out.push('<text class="ax" x="'+(W-Rr+6)+'" y="'+(YP(v)+4)+'" fill="#C7760B">'+Math.round(v)+'</text>');});
   }
-  if(showHp){[0,50,100].forEach(function(v){out.push('<text class="ax" x="'+(W-Rr+6)+'" y="'+(YR(v)+4)+'" fill="#A78BFA">'+v+'</text>');});}
+  if(showHp){[0,50,100].forEach(function(v){out.push('<text class="ax" x="'+(W-Rr+6)+'" y="'+(YR(v)+4)+'" fill="#7C3AED">'+v+'</text>');});}
   var i,began,d;
   for(i=1;i<rows.length;i++){
     out.push('<line x1="'+X(i-1)+'" y1="'+Y(rows[i-1].s20)+'" x2="'+X(i)+'" y2="'+Y(rows[i].s20)+'" stroke="'+col(rows[i].s20)+'" stroke-width="1.9"/>');
@@ -134,7 +134,7 @@ function renderMain(){
       if(rows[i].px==null){began=false;continue;}
       d+=(began?'L':'M')+X(i)+' '+YP(rows[i].px); began=true;
     }
-    out.push('<path d="'+d+'" fill="none" stroke="#F5A623" stroke-width="1.7" opacity="0.9"/>');
+    out.push('<path d="'+d+'" fill="none" stroke="#C7760B" stroke-width="1.7" opacity="0.9"/>');
   }
   if(showHp){
     began=false;d='';
@@ -142,24 +142,24 @@ function renderMain(){
       if(rows[i].hp==null){began=false;continue;}
       d+=(began?'L':'M')+X(i)+' '+YR(rows[i].hp); began=true;
     }
-    out.push('<path d="'+d+'" fill="none" stroke="#A78BFA" stroke-width="1.4" stroke-dasharray="5 4" opacity="0.9"/>');
+    out.push('<path d="'+d+'" fill="none" stroke="#7C3AED" stroke-width="1.4" stroke-dasharray="5 4" opacity="0.9"/>');
   }
   for(var k=0;k<4;k++){
     var idx=Math.round(k*(rows.length-1)/3);
-    out.push('<text class="ax" x="'+X(idx)+'" y="'+(H-6)+'" text-anchor="middle" fill="#8A93A3">'+rows[idx].d.slice(2)+'</text>');
+    out.push('<text class="ax" x="'+X(idx)+'" y="'+(H-6)+'" text-anchor="middle" fill="#6B7280">'+rows[idx].d.slice(2)+'</text>');
   }
   var cr=document.createElementNS('http://www.w3.org/2000/svg','line');
-  cr.setAttribute('stroke','#FF8A1F');cr.setAttribute('stroke-width','1');
+  cr.setAttribute('stroke','#EA580C');cr.setAttribute('stroke-width','1');
   cr.setAttribute('y1',T);cr.setAttribute('y2',H-B);cr.setAttribute('opacity','0');
   out.push(cr.outerHTML);
   mainEl.innerHTML=out.join('');
-  marks={cross:mainEl.querySelector('line[stroke="#FF8A1F"]')};
+  marks={cross:mainEl.querySelector('line[stroke="#EA580C"]')};
 }
 
 function renderTable(){
   var h='';
   D.slice(-10).reverse().forEach(function(x){
-    var pv=PROV.indexOf(x.d)>=0?' <span style="color:#FF8A1F">未定稿</span>':'';
+    var pv=PROV.indexOf(x.d)>=0?' <span style="color:#EA580C">未定稿</span>':'';
     var spr=(x.npct!=null&&x.hp!=null)?(x.npct-x.hp):null;
     h+='<tr><td>'+x.d+pv+'</td><td class="up">'+x.i+'</td><td class="down">'+x.j+'</td>'
       +'<td class="'+col(x.n)+'">'+sg(x.n)+'</td><td class="'+col(x.s20)+'">'+sg(x.s20)+'</td>'
@@ -193,12 +193,12 @@ mainEl.addEventListener('mousemove',function(e){
   tip.style.display='block';
   tip.style.left=Math.min(window.innerWidth-270,e.clientX+14)+'px';
   tip.style.top=(e.clientY+14)+'px';
-  tip.innerHTML='<b>'+x.d+'</b>'+(PROV.indexOf(x.d)>=0?' <span style="color:#FF8A1F">未定稿</span>':'')
+  tip.innerHTML='<b>'+x.d+'</b>'+(PROV.indexOf(x.d)>=0?' <span style="color:#EA580C">未定稿</span>':'')
     +'<br>增持 <span class="up">'+x.i+'</span> 家 · 减持 <span class="down">'+x.j+'</span> 家'
     +'<br>'+WIN+'日净 <span class="'+col(x.s20)+'">'+sg(x.s20)+'</span> 家 · 分位 '+p1(x.npct)
-    +'<br>沪深300 <span style="color:#F5A623">'+fmtPx(x.px)+'</span> · 分位 <span style="color:#A78BFA">'+p1(x.hp)+'</span>'
+    +'<br>沪深300 <span style="color:#C7760B">'+fmtPx(x.px)+'</span>'+(x.px_cf?'<span style="color:#6B7280">（非交易日沿用前收盘）</span>':'') +' · 分位 <span style="color:#7C3AED">'+p1(x.hp)+'</span>'
     +'<br>分位差 <span class="'+col(spr)+'">'+(spr==null?'—':sg(spr.toFixed(1)))+'</span>'
-    +'<br><span style="color:#8A93A3">仅描述性对照，非买卖信号</span>';
+    +'<br><span style="color:#6B7280">仅描述性对照，非买卖信号</span>';
 });
 mainEl.addEventListener('mouseleave',function(){tip.style.display='none';if(marks.cross)marks.cross.setAttribute('opacity','0');});
 
