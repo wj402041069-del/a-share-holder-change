@@ -1,0 +1,261 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+A 股重要股东增减持家数 · 每日构建
+
+口径（不要随便改，README 有完整说明）：
+  · 数据源：东方财富数据中心 RPT_SHARE_HOLDER_INCREASE（重要股东增减持公告）
+  · 日期轴：NOTICE_DATE（公告日），不是 END_DATE（变动截止日）
+  · 计数  ：按 SECURITY_CODE 去重的「公司家数」，不是记录条数、不是股东人次
+  · 主指标：净家数 = 增持家数 − 减持家数；主图看 20 交易日累计净家数
+  · 方向  ：只用 DIRECTION 字段（CHANGE_NUM 有「减持但数值为正」的脏数据）
+
+产物：
+  history.json      逐日家数（随仓库提交，是唯一数据资产）
+  docs/index.html   单文件零外链静态看板（GitHub Pages 发布目录）
+"""
+import bisect
+import datetime
+import html
+import json
+import os
+import statistics
+import sys
+import time
+import urllib.parse
+import urllib.request
+from collections import defaultdict
+
+BASE = os.path.dirname(os.path.abspath(__file__))
+HISTORY = os.path.join(BASE, 'history.json')
+OUT_DIR = os.path.join(BASE, 'docs')
+OUT = os.path.join(OUT_DIR, 'index.html')
+
+API = 'https://datacenter-web.eastmoney.com/api/data/v1/get'
+PAGE_SIZE = 500
+LOOKBACK_DAYS = 12          # 每天回看最近 12 个自然日，捞迟到的公告
+MAX_HISTORY_DAYS = 5 * 366  # 保留 5 年
+WIN = 20                    # 主口径：20 交易日累计
+
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (compatible; holder-change/1.0)',
+    'Referer': 'https://data.eastmoney.com/',
+}
+
+
+# ---------------------------------------------------------------- 取数
+def http_json(params, tries=3):
+    url = API + '?' + urllib.parse.urlencode(params)
+    last = ''
+    for k in range(tries):
+        try:
+            req = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=45) as resp:
+                j = json.loads(resp.read().decode('utf-8'))
+            if not j.get('success'):
+                raise RuntimeError('success=false: ' + str(j)[:160])
+            if not j.get('result'):
+                raise RuntimeError('空 result: ' + str(j)[:160])
+            return j
+        except Exception as e:
+            last = str(e)[:200]
+            if k < tries - 1:
+                time.sleep(2 * (k + 1))
+    raise RuntimeError('东财接口失败：' + last)
+
+
+def fetch_range(start, end):
+    params = {
+        'reportName': 'RPT_SHARE_HOLDER_INCREASE',
+        'columns': 'ALL', 'source': 'WEB', 'client': 'WEB',
+        'pageSize': PAGE_SIZE, 'pageNumber': 1,
+        'sortColumns': 'NOTICE_DATE', 'sortTypes': '-1',
+        'filter': "(NOTICE_DATE>='%s')(NOTICE_DATE<='%s')" % (start, end),
+    }
+    rows = []
+    page = 1
+    while page <= 300:
+        params['pageNumber'] = page
+        j = http_json(params)
+        r = j['result']
+        data = r.get('data') or []
+        rows.extend(data)
+        pages = int(r.get('pages') or 1)
+        if page >= pages:
+            break
+        page += 1
+        time.sleep(0.12)
+    return rows
+
+
+def aggregate(rows):
+    """按公告日聚合：每天增持/减持各自的去重公司数。"""
+    by = defaultdict(lambda: {'增持': set(), '减持': set()})
+    for row in rows:
+        d = (row.get('NOTICE_DATE') or '')[:10]
+        direction = row.get('DIRECTION')
+        code = row.get('SECURITY_CODE')
+        if not d or not code or direction not in ('增持', '减持'):
+            continue
+        by[d][direction].add(code)
+    return {d: {'inc': len(v['增持']), 'dec': len(v['减持'])}
+            for d, v in by.items()}
+
+
+# ---------------------------------------------------------------- 历史
+def load_history():
+    if not os.path.exists(HISTORY):
+        return {'schema': 1, 'asof': None, 'generated_at': None, 'days': {}}
+    with open(HISTORY, encoding='utf-8') as f:
+        h = json.load(f)
+    h.setdefault('days', {})
+    return h
+
+
+def update_history(h, today):
+    start = (today - datetime.timedelta(days=LOOKBACK_DAYS)).isoformat()
+    end = today.isoformat()
+    rows = fetch_range(start, end)
+    if not rows:
+        raise RuntimeError('回看窗口内 0 条记录，按失败处理，绝不覆盖历史')
+    fresh = aggregate(rows)
+    if not fresh:
+        raise RuntimeError('聚合后 0 天有效数据，按失败处理')
+
+    changed = 0
+    stamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    for d, v in fresh.items():
+        old = h['days'].get(d)
+        if old != v:
+            changed += 1
+        h['days'][d] = {'inc': v['inc'], 'dec': v['dec'], 'updated': stamp}
+
+    # 保留最近 5 年，防止文件无限增长
+    cutoff = (today - datetime.timedelta(days=MAX_HISTORY_DAYS)).isoformat()
+    h['days'] = {k: v for k, v in h['days'].items() if k >= cutoff}
+    h['asof'] = max(h['days'])
+    h['generated_at'] = stamp
+    h['last_raw'] = len(rows)
+    return h, changed, len(rows)
+
+
+def backfill_history(today):
+    """一次性回填 5 年（首次建仓用，之后日常只跑 update_history）。"""
+    start = (today - datetime.timedelta(days=MAX_HISTORY_DAYS)).isoformat()
+    end = today.isoformat()
+    print('backfill %s ~ %s ...' % (start, end), flush=True)
+    rows = fetch_range(start, end)
+    if len(rows) < 1000:
+        raise RuntimeError('回填只拿到 %d 条，怀疑上游异常，拒绝写入' % len(rows))
+    fresh = aggregate(rows)
+    stamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    h = {
+        'schema': 1, 'asof': max(fresh), 'generated_at': stamp, 'last_raw': len(rows),
+        'days': {d: {'inc': v['inc'], 'dec': v['dec'], 'updated': stamp}
+                 for d, v in fresh.items()},
+    }
+    return h, 0, len(rows)
+
+
+# ---------------------------------------------------------------- 指标
+def derive(days):
+    dates = sorted(days)
+    out = []
+    incs = []
+    for d in dates:
+        i = int(days[d].get('inc') or 0)
+        j = int(days[d].get('dec') or 0)
+        incs.append(i)
+        w = incs[-WIN:]
+        si, sj = i, j
+        for k in range(1, min(WIN, len(incs))):
+            pd = dates[len(incs) - 1 - k]
+            si += int(days[pd].get('inc') or 0)
+            sj += int(days[pd].get('dec') or 0)
+        net = i - j
+        s20 = si - sj
+        r20 = round(si / (si + sj) * 100, 2) if (si + sj) else None
+        out.append({'d': d, 'i': i, 'j': j, 'n': net,
+                    's20': s20, 'si20': si, 'sj20': sj, 'r20': r20})
+    vals = sorted(x['r20'] for x in out if x['r20'] is not None)
+    for x in out:
+        x['pct'] = (round(bisect.bisect_right(vals, x['r20']) / len(vals) * 100, 1)
+                    if x['r20'] is not None and vals else None)
+    return out
+
+
+# ---------------------------------------------------------------- 页面
+def render(h, rows, changed, raw_count):
+    last = rows[-1]
+    asof = h['asof']
+    gen = h.get('generated_at') or '-'
+    provisional = rows[-2:]
+    prov_dates = [x['d'] for x in provisional]
+    data_json = json.dumps(rows, ensure_ascii=False, separators=(',', ':'))
+    prov_json = json.dumps(prov_dates, ensure_ascii=False)
+
+    def jt(v):
+        return '<span class="%s">%s</span>' % (
+            'up' if v > 0 else ('down' if v < 0 else 'flat'),
+            ('+' if v > 0 else '') + str(v))
+
+    # 这套披露口径天然「减持多于增持」（减持多为法定强制披露，增持多为自愿），
+    # 因此 50% 绝不是中性线；基准必须取本序列自己的历史中位。
+    r20_all = sorted(x['r20'] for x in rows if x['r20'] is not None)
+    med = statistics.median(r20_all) if r20_all else 50.0
+
+    kpi = (
+        '<div class="kpis">'
+        '<div class="kpi"><div class="kl">当日净家数</div><div class="kv">%s</div><div class="ks">增 %d · 减 %d</div></div>'
+        '<div class="kpi"><div class="kl">%d 日累计净家数</div><div class="kv">%s</div><div class="ks">增 %d · 减 %d</div></div>'
+        '<div class="kpi"><div class="kl">%d 日增持占比</div><div class="kv">%s</div><div class="ks">历史中位 %.1f%% 为基准</div></div>'
+        '<div class="kpi"><div class="kl">该占比历史分位</div><div class="kv">%s</div><div class="ks">近 %d 年</div></div>'
+        '</div>'
+    ) % (jt(last['n']), last['i'], last['j'],
+         WIN, jt(last['s20']), last['si20'], last['sj20'],
+         WIN, ('%.1f%%' % last['r20']) if last['r20'] is not None else '—', med,
+         ('%.1f%%' % last['pct']) if last['pct'] is not None else '—',
+         round(len(rows) / 245.0, 1))
+
+    tpl_path = os.path.join(BASE, 'template.html')
+    with open(tpl_path, encoding='utf-8') as f:
+        tpl = f.read()
+    return tpl.replace('__KPI__', kpi) \
+                    .replace('__DATA__', data_json) \
+                    .replace('__PROV__', prov_json) \
+                    .replace('__ASOF__', html.escape(asof)) \
+                    .replace('__GEN__', html.escape(gen)) \
+                    .replace('__WIN__', str(WIN)) \
+                    .replace('__ROWS__', str(len(rows))) \
+                    .replace('__CHANGED__', str(changed)) \
+                    .replace('__RAW__', str(raw_count))
+
+
+# ---------------------------------------------------------------- main
+def main():
+    today = datetime.date.today()
+    if '--backfill' in sys.argv:
+        h, changed, raw_count = backfill_history(today)
+    else:
+        h = load_history()
+        if len(h['days']) < 60:
+            raise RuntimeError('本地 history.json 不足 60 天，请先跑 --backfill')
+        h, changed, raw_count = update_history(h, today)
+    rows = derive(h['days'])
+    if len(rows) < 60:
+        raise RuntimeError('有效交易日不足 60，拒绝覆盖页面')
+    os.makedirs(OUT_DIR, exist_ok=True)
+    page = render(h, rows, changed, int(h.get('last_raw') or raw_count))
+    with open(OUT, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(page)
+    with open(HISTORY, 'w', encoding='utf-8', newline='\n') as f:
+        json.dump(h, f, ensure_ascii=False, indent=1, sort_keys=True)
+    print('asof %s | 交易日 %d | 原始公告 %d 条 | 变化 %d 天 | 当日 增%d/减%d | %d日净 %+d | 占比 %s'
+          % (h['asof'], len(rows), raw_count, changed,
+             rows[-1]['i'], rows[-1]['j'], WIN, rows[-1]['s20'],
+             ('%.2f%%' % rows[-1]['r20']) if rows[-1]['r20'] is not None else '—'))
+    print('written', OUT, os.path.getsize(OUT), 'bytes')
+
+
+if __name__ == '__main__':
+    main()
