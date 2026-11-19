@@ -47,6 +47,13 @@ else:
     print('WARN  hs300.json 不存在（页面会标「对照暂缺」，允许发布）')
 ck('沪深300 对照' in page and '__HSBADGE__' not in page, '沪深300 对照说明存在且占位符已替换')
 ck('分位差' in page and 'npct' in page, '分位差字段已接入')
+if os.path.exists(hp):
+    m = re.search(r'var D=(\[.*?\]), PROV=', page, re.S)
+    if m:
+        ds = json.loads(m.group(1))
+        miss = sum(1 for x in ds if x.get('px') is None)
+        ck(miss == 0, '沪深300点位已 carry-forward 填满（空 %d 天）' % miss)
+        ck(any(x.get('px_cf') for x in ds), '非交易日 carry-forward 标记存在')
 ck('每日增持 / 减持家数' not in page, '日度柱已按要求移除')
 
 # 凭据红线：仓库内不得出现任何密钥
