@@ -55,6 +55,15 @@ if os.path.exists(hp):
         ck(miss == 0, '沪深300点位已 carry-forward 填满（空 %d 天）' % miss)
         ck(any(x.get('px_cf') for x in ds), '非交易日 carry-forward 标记存在')
 ck('每日增持 / 减持家数' not in page, '日度柱已按要求移除')
+ck('切换金额口径' in page and 's20a' in page and '净金额' in page, '金额口径切换已接入')
+ck('未来 30 天解禁压力' in page and 'renderLift' in page and '__LIFT' not in page, '解禁卡片已接入')
+
+liftf = os.path.join(BASE, 'lift.json')
+if os.path.exists(liftf):
+    lf = json.load(io.open(liftf, encoding='utf-8')).get('days') or {}
+    ck(len(lf) >= 10, '解禁数据至少 10 个交易日（实际 %d）' % len(lf))
+else:
+    print('WARN  lift.json 不存在（页面会标缺失，允许发布）')
 
 # 凭据红线：仓库内不得出现任何密钥
 all_text = ''
