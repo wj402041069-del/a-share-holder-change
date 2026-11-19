@@ -30,6 +30,7 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 HISTORY = os.path.join(BASE, 'history.json')
 OUT_DIR = os.path.join(BASE, 'docs')
 OUT = os.path.join(OUT_DIR, 'index.html')
+HS_HISTORY = os.path.join(BASE, 'hs300.json')
 
 API = 'https://datacenter-web.eastmoney.com/api/data/v1/get'
 PAGE_SIZE = 500
@@ -62,6 +63,49 @@ def http_json(params, tries=3):
             if k < tries - 1:
                 time.sleep(2 * (k + 1))
     raise RuntimeError('东财接口失败：' + last)
+
+
+def fetch_hs300(start, end):
+    """腾讯日K取沪深300（独立宿主，不经过 Worker、不需要密钥）。"""
+    url = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get'
+    params = {'param': 'sh000300,day,%s,%s,1500,qfq' % (start, end)}
+    req = urllib.request.Request(
+        url + '?' + urllib.parse.urlencode(params),
+        headers={'User-Agent': 'Mozilla/5.0 (compatible; holder-change/1.0)'})
+    with urllib.request.urlopen(req, timeout=45) as resp:
+        j = json.loads(resp.read().decode('utf-8'))
+    obj = (j.get('data') or {}).get('sh000300') or {}
+    arr = obj.get('qfqday') or obj.get('day') or []
+    if len(arr) < 200:
+        raise RuntimeError('沪深300 日K只有 %d 根，按失败处理' % len(arr))
+    return {x[0]: round(float(x[2]), 2) for x in arr}
+
+
+def load_hs300():
+    if not os.path.exists(HS_HISTORY):
+        return {}
+    try:
+        with open(HS_HISTORY, encoding='utf-8') as f:
+            return json.load(f).get('data') or {}
+    except Exception:
+        return {}
+
+
+def rolling_rank(values, window=250):
+    """250 交易日滚动 percentile rank（0-100），只用当日及之前的数据。
+
+    不对净家数做 min-max「归一到 100」：它有负值、均值为负，映射到 100 会失真。
+    两条序列都换算成分位后，差值才是同量纲的背离读数。
+    """
+    out = []
+    for i, v in enumerate(values):
+        if v is None:
+            out.append(None)
+            continue
+        seg = [x for x in values[max(0, i - window + 1):i + 1] if x is not None]
+        out.append(round(bisect.bisect_right(sorted(seg), v) / len(seg) * 100, 1)
+                   if seg else None)
+    return out
 
 
 def cninfo_probe(date_str):
@@ -200,7 +244,8 @@ def backfill_history(today):
 
 
 # ---------------------------------------------------------------- 指标
-def derive(days):
+def derive(days, hs=None):
+    hs = hs or {}
     dates = sorted(days)
     out = []
     incs = []
@@ -218,7 +263,15 @@ def derive(days):
         s20 = si - sj
         r20 = round(si / (si + sj) * 100, 2) if (si + sj) else None
         out.append({'d': d, 'i': i, 'j': j, 'n': net,
-                    's20': s20, 'si20': si, 'sj20': sj, 'r20': r20})
+                    's20': s20, 'si20': si, 'sj20': sj, 'r20': r20,
+                    'px': hs.get(d)})
+    # 两条序列各自算 250 日滚动分位，差值才是同量纲背离
+    npct = rolling_rank([x['s20'] for x in out])
+    hs_dates = sorted(hs)
+    hp_map = dict(zip(hs_dates, rolling_rank([hs[d] for d in hs_dates])))
+    for idx, x in enumerate(out):
+        x['npct'] = npct[idx]
+        x['hp'] = hp_map.get(x['d'])
     vals = sorted(x['r20'] for x in out if x['r20'] is not None)
     for x in out:
         x['pct'] = (round(bisect.bisect_right(vals, x['r20']) / len(vals) * 100, 1)
@@ -233,6 +286,9 @@ def render(h, rows, changed, raw_count):
     gen = h.get('generated_at') or '-'
     provisional = rows[-2:]
     prov_dates = [x['d'] for x in provisional]
+    hs_ok = any(x.get('px') is not None for x in rows)
+    hs_badge = ('沪深300 对照已接入' if hs_ok
+                else '沪深300 对照暂缺（不影响主数据）')
     data_json = json.dumps(rows, ensure_ascii=False, separators=(',', ':'))
     prov_json = json.dumps(prov_dates, ensure_ascii=False)
 
@@ -265,6 +321,7 @@ def render(h, rows, changed, raw_count):
     return tpl.replace('__KPI__', kpi) \
                     .replace('__DATA__', data_json) \
                     .replace('__PROV__', prov_json) \
+                    .replace('__HSBADGE__', hs_badge) \
                     .replace('__ASOF__', html.escape(asof)) \
                     .replace('__GEN__', html.escape(gen)) \
                     .replace('__WIN__', str(WIN)) \
@@ -283,7 +340,20 @@ def main():
         if len(h['days']) < 60:
             raise RuntimeError('本地 history.json 不足 60 天，请先跑 --backfill')
         h, changed, raw_count = update_history(h, today)
-    rows = derive(h['days'])
+    # 沪深300 对照：抓新失败就沿用本地缓存；都没有就留空、页面标「对照暂缺」，
+    # 绝不能因为对照源挂了而阻断主数据发布。
+    hs = load_hs300()
+    hs_fresh = False
+    hs_start = (today - datetime.timedelta(days=MAX_HISTORY_DAYS)).isoformat()
+    try:
+        fresh = fetch_hs300(hs_start, today.isoformat())
+        if len(fresh) >= 200:
+            hs = fresh
+            hs_fresh = True
+    except Exception as e:
+        print('沪深300 抓取失败，沿用本地缓存：' + str(e)[:140])
+
+    rows = derive(h['days'], hs)
     if len(rows) < 60:
         raise RuntimeError('有效交易日不足 60，拒绝覆盖页面')
     os.makedirs(OUT_DIR, exist_ok=True)
@@ -292,10 +362,18 @@ def main():
         f.write(page)
     with open(HISTORY, 'w', encoding='utf-8', newline='\n') as f:
         json.dump(h, f, ensure_ascii=False, indent=1, sort_keys=True)
+    if hs_fresh or not os.path.exists(HS_HISTORY):
+        with open(HS_HISTORY, 'w', encoding='utf-8', newline='\n') as f:
+            json.dump({'asof': max(hs) if hs else None,
+                       'generated_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                       'data': hs}, f, ensure_ascii=False, indent=1, sort_keys=True)
     print('asof %s | 交易日 %d | 原始公告 %d 条 | 变化 %d 天 | 当日 增%d/减%d | %d日净 %+d | 占比 %s'
           % (h['asof'], len(rows), raw_count, changed,
              rows[-1]['i'], rows[-1]['j'], WIN, rows[-1]['s20'],
              ('%.2f%%' % rows[-1]['r20']) if rows[-1]['r20'] is not None else '—'))
+    print('沪深300 对照 %d 天（%s）'
+          % (sum(1 for x in rows if x.get('px') is not None),
+             '本次新抓' if hs_fresh else '沿用缓存' if hs else '缺失'))
     print('written', OUT, os.path.getsize(OUT), 'bytes')
 
 
