@@ -58,6 +58,7 @@ ck('每日增持 / 减持家数' not in page, '日度柱已按要求移除')
 ck('净金额趋势（估算）' in page and 's20a' in page and 'renderAmt' in page, '金额常驻窗口已接入')
 ck('切换金额口径' not in page and 'amountMode' not in page, '旧的金额切换按钮已移除')
 ck('未来 30 天解禁压力' in page and 'renderLift' in page and '__LIFT' not in page, '解禁卡片已接入')
+ck(re.search(r'(\d+) 笔解禁 · (\d+) 个交易日', page) and re.search(r'(\d+) 笔解禁 · (\d+) 个交易日', page).group(1) != re.search(r'(\d+) 笔解禁 · (\d+) 个交易日', page).group(2), '解禁笔数与交易日数不混淆')
 
 liftf = os.path.join(BASE, 'lift.json')
 if os.path.exists(liftf):
