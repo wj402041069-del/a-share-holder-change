@@ -82,6 +82,11 @@ __KPI__
 </div>
 
 <div class="card">
+  <div class="ct">分位差趋势 <span class="cs">净家数分位 − 沪深300分位（各 250 日滚动，0–100）· 与主图同步窗口与鼠标；红正绿负 · 纯描述性背离，非买卖信号</span></div>
+  <svg id="sprSvg" viewBox="0 0 1000 180" preserveAspectRatio="none"></svg>
+</div>
+
+<div class="card">
   <div class="ct">未来 30 天解禁压力 <span class="cs">东财限售解禁 · 日历确定 · 前瞻指标</span></div>
   <div class="liftgrid">
     <div class="liftcard"><div class="lk">30 天解禁总市值</div><div class="lv">__LIFTTOTAL__ <span style="font-size:12px">亿元</span></div><div class="ls">__LIFTRAW__ 笔解禁 · __LIFTCOUNT__ 个交易日</div></div>
@@ -118,8 +123,8 @@ __KPI__
 
 <script>
 var D=__DATA__, PROV=__PROV__, WIN=__WIN__, LIFT=__LIFT__;
-var Lf=60,Rr=66,T=18,B=28,W=1000,H=340;
-var mainEl=document.getElementById('main'), amtEl=document.getElementById('amtSvg'), tip=document.getElementById('tip');
+var Lf=60,Rr=18,T=18,B=28,W=1000,H=340;  // Rr 与金额图/分位差图统一为 18，三图 X 轴逐点对齐
+var mainEl=document.getElementById('main'), amtEl=document.getElementById('amtSvg'), sprEl=document.getElementById('sprSvg'), tip=document.getElementById('tip');
 var curN=250, curRows=[], showPx=true, showHp=false, marks={};
 
 function col(v){return v>0?'#D92D20':(v<0?'#0E9F6E':'#6B7280');}
@@ -146,10 +151,11 @@ function renderMain(){
   out.push('<line x1="'+Lf+'" y1="'+Y(0)+'" x2="'+(W-Rr)+'" y2="'+Y(0)+'" stroke="#9CA3AF" stroke-width="1" stroke-dasharray="4 4"/>');
   [mx,mn].forEach(function(v){out.push('<text class="ax" x="4" y="'+(Y(v)+4)+'" fill="#6B7280">'+Math.round(v)+'</text>');});
   out.push('<text class="ax" x="4" y="'+(Y(0)+4)+'" fill="#6B7280">0</text>');
+  // 右轴刻度贴 viewBox 右边缘、右对齐：主图 Rr 已缩到 18，旧写法 (W-Rr+6) 会把文字顶出画布被截断
   if(showPx && pv.length){
-    [pmx,pmn].forEach(function(v){out.push('<text class="ax" x="'+(W-Rr+6)+'" y="'+(YP(v)+4)+'" fill="#C7760B">'+Math.round(v)+'</text>');});
+    [pmx,pmn].forEach(function(v){out.push('<text class="ax" x="'+(W-4)+'" y="'+(YP(v)+4)+'" text-anchor="end" fill="#C7760B">'+Math.round(v)+'</text>');});
   }
-  if(showHp){[0,50,100].forEach(function(v){out.push('<text class="ax" x="'+(W-Rr+6)+'" y="'+(YR(v)+4)+'" fill="#7C3AED">'+v+'</text>');});}
+  if(showHp){[0,50,100].forEach(function(v){out.push('<text class="ax" x="'+(W-4)+'" y="'+(YR(v)+4)+'" text-anchor="end" fill="#7C3AED">'+v+'</text>');});}
   var i,began,d;
   for(i=1;i<rows.length;i++){
     out.push('<line x1="'+X(i-1)+'" y1="'+Y(rows[i-1][key])+'" x2="'+X(i)+'" y2="'+Y(rows[i][key])+'" stroke="'+col(rows[i][key])+'" stroke-width="1.9"/>');
@@ -179,7 +185,8 @@ function renderMain(){
   cr.setAttribute('y1',T);cr.setAttribute('y2',H-B);cr.setAttribute('opacity','0');
   out.push(cr.outerHTML);
   mainEl.innerHTML=out.join('');
-  marks={cross:mainEl.querySelector('line[stroke="#EA580C"]')};
+  // 只替换主图十字线引用，不清空 marks：否则切换点位/分位后，金额图与分位差图的十字线引用会丢失
+  marks.cross=mainEl.querySelector('line[stroke="#EA580C"]');
 }
 
 function renderTable(){
@@ -225,6 +232,43 @@ function renderAmt(){
   marks.amtCross=amtEl.querySelector('line[stroke="#EA580C"]');
 }
 
+function renderSpr(){
+  var rows=curN>0?D.slice(-curN):D;
+  // 分位差 = 净家数分位 − 沪深300分位（两条各自 250 日滚动分位，单位百分点）
+  var vals=rows.map(function(x){return (x.npct!=null&&x.hp!=null)?(x.npct-x.hp):null;}).filter(function(v){return v!=null;});
+  if(!vals.length){sprEl.innerHTML='';return;}
+  var mx=Math.max.apply(null,vals.concat([10])), mn=Math.min.apply(null,vals.concat([-10]));
+  var p=(mx-mn)*0.1; mx+=p; mn-=p;
+  // X 轴与主图/金额图严格一致：同样 Lf=60 / Rr=18 / W=1000
+  var S2=1000,H2=180,L2=Lf,R2=Rr,T2=14,B2=24;
+  var X=function(i){return L2+i*(S2-L2-R2)/Math.max(1,rows.length-1);};
+  var Y=function(v){return T2+(mx-v)*(H2-T2-B2)/(mx-mn);};
+  var out=[];
+  [0,mn/2,mx/2].forEach(function(v){out.push('<line class="gl" x1="'+L2+'" y1="'+Y(v)+'" x2="'+(S2-R2)+'" y2="'+Y(v)+'"/>');});
+  out.push('<line x1="'+L2+'" y1="'+Y(0)+'" x2="'+(S2-R2)+'" y2="'+Y(0)+'" stroke="#9CA3AF" stroke-width="1" stroke-dasharray="4 4"/>');
+  [mx,mn].forEach(function(v){out.push('<text class="ax" x="4" y="'+(Y(v)+4)+'" fill="#6B7280">'+(v>0?'+':'')+v.toFixed(0)+'</text>');});
+  out.push('<text class="ax" x="4" y="'+(Y(0)+4)+'" fill="#6B7280">0</text>');
+  var prev=null, pv=null;
+  for(var i=0;i<rows.length;i++){
+    var v=(rows[i].npct!=null&&rows[i].hp!=null)?(rows[i].npct-rows[i].hp):null;
+    if(v==null){prev=null;continue;}
+    if(prev!==null){
+      out.push('<line x1="'+X(prev.i).toFixed(1)+'" y1="'+Y(pv).toFixed(1)+'" x2="'+X(i).toFixed(1)+'" y2="'+Y(v).toFixed(1)+'" stroke="'+col(v)+'" stroke-width="1.9"/>');
+    }
+    prev={i:i}; pv=v;
+  }
+  for(var k=0;k<4;k++){
+    var idx=Math.round(k*(rows.length-1)/3);
+    out.push('<text class="ax" x="'+X(idx).toFixed(1)+'" y="'+(H2-4)+'" text-anchor="middle" fill="#6B7280">'+rows[idx].d.slice(2)+'</text>');
+  }
+  var cr=document.createElementNS('http://www.w3.org/2000/svg','line');
+  cr.setAttribute('stroke','#EA580C');cr.setAttribute('stroke-width','1');
+  cr.setAttribute('y1',T2);cr.setAttribute('y2',H2-B2);cr.setAttribute('opacity','0');
+  out.push(cr.outerHTML);
+  sprEl.innerHTML=out.join('');
+  marks.sprCross=sprEl.querySelector('line[stroke="#EA580C"]');
+}
+
 function renderLift(){
   var el=document.getElementById('liftSvg');
   if(!el||!LIFT||!Object.keys(LIFT).length){if(el)el.innerHTML='';return;}
@@ -241,7 +285,7 @@ function renderLift(){
   el.innerHTML=out.join('');
 }
 
-function render(){renderMain();renderAmt();renderTable();renderLift();}
+function render(){renderMain();renderAmt();renderSpr();renderTable();renderLift();}
 
 document.getElementById('rangeBar').addEventListener('click',function(e){
   var b=e.target.closest('.btn'); if(!b) return;
@@ -249,7 +293,7 @@ document.getElementById('rangeBar').addEventListener('click',function(e){
   if(b.id==='tglHp'){showHp=!showHp;b.classList.toggle('on',showHp);renderMain();return;}
   curN=parseInt(b.dataset.n,10);
   [].forEach.call(this.querySelectorAll('.btn[data-n]'),function(x){x.classList.toggle('on',x===b);});
-  renderMain();renderAmt();
+  renderMain();renderAmt();renderSpr();
 });
 
 mainEl.addEventListener('mousemove',function(e){
@@ -280,7 +324,9 @@ function mouseMove(e,srcEl,sxScale,xCalc){
   idx=Math.max(0,Math.min(curRows.length-1,idx));
   var x=curRows[idx];
   if(marks.cross){marks.cross.setAttribute('opacity','1');var px=Lf+idx*(W-Lf-Rr)/Math.max(1,curRows.length-1);marks.cross.setAttribute('x1',px);marks.cross.setAttribute('x2',px);}
-  if(marks.amtCross){marks.amtCross.setAttribute('opacity','1');var px2=60+idx*(1000-60-18)/Math.max(1,curRows.length-1);marks.amtCross.setAttribute('x1',px2);marks.amtCross.setAttribute('x2',px2);}
+  if(marks.amtCross){marks.amtCross.setAttribute('opacity','1');var px2=Lf+idx*(W-Lf-Rr)/Math.max(1,curRows.length-1);marks.amtCross.setAttribute('x1',px2);marks.amtCross.setAttribute('x2',px2);}
+  // 分位差图与主图/金额图共用同一 X 映射，三图十字线逐点对齐
+  if(marks.sprCross){marks.sprCross.setAttribute('opacity','1');var px3=Lf+idx*(W-Lf-Rr)/Math.max(1,curRows.length-1);marks.sprCross.setAttribute('x1',px3);marks.sprCross.setAttribute('x2',px3);}
   var spr=(x.npct!=null&&x.hp!=null)?(x.npct-x.hp):null;
   tip.style.display='block';
   tip.style.left=Math.min(window.innerWidth-270,e.clientX+14)+'px';
@@ -294,10 +340,12 @@ function mouseMove(e,srcEl,sxScale,xCalc){
     +'<br><span style="color:#6B7280">仅描述性对照，非买卖信号</span>';
 }
 mainEl.addEventListener('mousemove',function(e){mouseMove(e,mainEl,function(v){return v/1000*1000;},function(v){return (v-Lf)/(W-Lf-Rr)*(curRows.length-1);});});
-amtEl.addEventListener('mousemove',function(e){mouseMove(e,amtEl,function(v){return v/1000*1000;},function(v){return (v-60)/(1000-60-18)*(curRows.length-1);});});
-function hideCross(){tip.style.display='none';if(marks.cross)marks.cross.setAttribute('opacity','0');if(marks.amtCross)marks.amtCross.setAttribute('opacity','0');}
+amtEl.addEventListener('mousemove',function(e){mouseMove(e,amtEl,function(v){return v/1000*1000;},function(v){return (v-Lf)/(W-Lf-Rr)*(curRows.length-1);});});
+sprEl.addEventListener('mousemove',function(e){mouseMove(e,sprEl,function(v){return v/1000*1000;},function(v){return (v-Lf)/(W-Lf-Rr)*(curRows.length-1);});});
+function hideCross(){tip.style.display='none';if(marks.cross)marks.cross.setAttribute('opacity','0');if(marks.amtCross)marks.amtCross.setAttribute('opacity','0');if(marks.sprCross)marks.sprCross.setAttribute('opacity','0');}
 mainEl.addEventListener('mouseleave',hideCross);
 amtEl.addEventListener('mouseleave',hideCross);
+sprEl.addEventListener('mouseleave',hideCross);
 
 document.getElementById('provBadge').textContent=PROV.length?'最近 '+PROV.length+' 日未定稿':'';
 (function(){
