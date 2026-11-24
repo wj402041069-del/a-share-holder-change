@@ -449,7 +449,12 @@ def main():
     # 绝不能因为对照源挂了而阻断主数据发布。
     hs = load_hs300()
     hs_fresh = False
-    hs_start = (today - datetime.timedelta(days=MAX_HISTORY_DAYS)).isoformat()
+    # 起抓日必须早于「最早一个公告日」：公告历史从 2021-11-19 起，
+    # 若按 today - 5年 取到 2021-11-20，最早一天前面没有任何指数收盘可
+    # carry-forward，check.py 会报 1 天空缺并停止发布。多取 15 个自然日
+    # 只扩大取数窗口，不改变页面 5 年展示范围。
+    hs_start = (datetime.date.fromisoformat(min(h['days']))
+                - datetime.timedelta(days=15)).isoformat()
     try:
         fresh = fetch_hs300(hs_start, today.isoformat())
         if len(fresh) >= 200:
